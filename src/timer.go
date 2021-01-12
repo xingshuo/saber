@@ -31,7 +31,7 @@ type Heapq struct {
 
 func (hq *Heapq) push(t *Ticker) error {
 	if hq.size >= hq.cap {
-		newq := make([]*Ticker, 2*hq.cap + 1)
+		newq := make([]*Ticker, 2*hq.cap+1)
 		for i := 1; i <= hq.size; i++ {
 			newq[i] = hq.data[i]
 		}
@@ -85,7 +85,7 @@ func (hq *Heapq) PopUntil(now time.Time) []TimerSeq {
 				continue
 			}
 		}
-		top.nextTime = top.nextTime + top.interval* int64(time.Millisecond)
+		top.nextTime = top.nextTime + top.interval*int64(time.Millisecond)
 		hq.shiftdown(1)
 	}
 	return tickSeqs
@@ -137,7 +137,7 @@ type TimerSeq struct {
 
 type TimeStore struct {
 	server *Server
-	rwMu sync.RWMutex
+	rwMu   sync.RWMutex
 	queue  *Heapq
 	timers map[TimerSeq]*Ticker
 }
@@ -146,7 +146,7 @@ func (ts *TimeStore) Init() {
 	ts.queue = &Heapq{
 		size: 0,
 		cap:  DEFAULT_TIMER_CAP,
-		data: make([]*Ticker, DEFAULT_TIMER_CAP + 1),
+		data: make([]*Ticker, DEFAULT_TIMER_CAP+1),
 	}
 	ts.timers = make(map[TimerSeq]*Ticker)
 	go ts.Start()
@@ -168,7 +168,7 @@ func (ts *TimeStore) OnTick(now time.Time) {
 	ts.rwMu.Lock()
 	tickSeqs := ts.queue.PopUntil(now)
 	ts.rwMu.Unlock()
-	for _,seq := range tickSeqs {
+	for _, seq := range tickSeqs {
 		svc := ts.server.GetService(seq.handle)
 		if svc != nil {
 			svc.pushMsg(context.Background(), SVC_HANDLE(0), MSG_TYPE_TIMER, seq.session, nil)
@@ -184,7 +184,7 @@ func (ts *TimeStore) Push(handle SVC_HANDLE, session uint32, interval int64, cou
 		session:  session,
 		interval: interval,
 		count:    count,
-		nextTime: time.Now().UnixNano() + interval * int64(time.Millisecond),
+		nextTime: time.Now().UnixNano() + interval*int64(time.Millisecond),
 		expired:  false,
 	}
 	seq := TimerSeq{

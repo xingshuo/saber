@@ -61,7 +61,7 @@ func (ss *SessionStore) Wait(ctx context.Context, srcSvc *Service, dstSvc *Servi
 	if !srcSvc.isParallel() { // 通知Serve继续处理其他消息
 		srcSvc.suspend <- struct{}{}
 	}
-	timeout,_ := ctx.Value(CtxKeyRpcTimeoutMS).(time.Duration)
+	timeout, _ := ctx.Value(CtxKeyRpcTimeoutMS).(time.Duration)
 	if timeout > 0 {
 		timer := time.NewTimer(timeout)
 		select {

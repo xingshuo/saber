@@ -1,0 +1,10 @@
+{
+  "ClusterName": "simple",
+  "LocalAddr": "127.0.0.1:8903",
+  "RemoteAddrs": {
+    "qinglong": "127.0.0.1:8904",
+    "baihu": "127.0.0.1:8905",
+    "zhuque": "127.0.0.1:8906"
+  },
+  "TickIntervalMs": 500
+}

@@ -3,10 +3,11 @@ package saber
 import (
 	"context"
 	"fmt"
+	"sync"
+
 	"github.com/xingshuo/saber/common/lib"
 	"github.com/xingshuo/saber/common/log"
 	"github.com/xingshuo/saber/common/utils"
-	"sync"
 )
 
 type SvcHandlerFunc func(ctx context.Context, req interface{}) (rsp interface{}, err error)
@@ -31,10 +32,15 @@ type Service struct {
 	svcTimers    map[uint32]*SvcTimer
 	rwMu         sync.RWMutex // 其实伪并发模式不需要
 	msgNotify    chan struct{}
-	exitNotify   lib.SyncEvent
-	exitDone     lib.SyncEvent
+	exitNotify   *lib.SyncEvent
+	exitDone     *lib.SyncEvent
 	sessionStore *SessionStore
 	suspend      chan struct{}
+	log          *log.LoggerWrapper
+}
+
+func (s *Service) String() string {
+	return fmt.Sprintf("[%s-%d]", s.name, s.instID)
 }
 
 func (s *Service) Init() {
@@ -43,7 +49,12 @@ func (s *Service) Init() {
 	s.svcHandlers = make(map[string]SvcHandlerFunc)
 	s.sessionStore = &SessionStore{}
 	s.sessionStore.Init()
+	s.svcTimers = make(map[uint32]*SvcTimer)
+	s.exitNotify = lib.NewEvent()
+	s.exitDone = lib.NewEvent()
 	s.suspend = make(chan struct{}, 1)
+	s.log = log.NewLoggerWrapper()
+	s.log.SetLogger(s.server.GetLogger())
 }
 
 // 服务启动时注册
@@ -76,6 +87,11 @@ func (s *Service) UnRegisterTimer(session uint32) {
 	delete(s.svcTimers, session)
 	s.rwMu.Unlock()
 	s.server.timerStore.Remove(s.handle, session)
+}
+
+// 服务自定义logger实现
+func (s *Service) SetLogger(logger log.Logger) {
+	s.log.SetLogger(logger)
 }
 
 func (s *Service) isParallel() bool {
@@ -116,24 +132,24 @@ func (s *Service) onRecvSvcReq(source SVC_HANDLE, session uint32, msg interface{
 	if handler == nil {
 		if session != 0 {
 			err := s.rawSend(context.Background(), source, MSG_TYPE_SVC_RSP, session, &SvcResponse{
-				Err:  fmt.Errorf("call unknown func %s", req.Method),
+				Err: fmt.Errorf("call unknown func %s", req.Method),
 			})
 			if err != nil {
-				log.Errorf("reply svc msg err:%v", err)
+				s.log.Errorf("reply svc msg err:%v", err)
 			}
 		}
 		return
 	}
 	ctx := context.WithValue(context.Background(), CtxKeyService, s)
 	// svc, _ := ctx.Value(CtxKeyService).(*Service)
-	rsp,err := handler(ctx, req.Body)
+	rsp, err := handler(ctx, req.Body)
 	if session != 0 {
-		sErr := s.rawSend(ctx, source, MSG_TYPE_SVC_RSP, session, SvcResponse{
+		sErr := s.rawSend(ctx, source, MSG_TYPE_SVC_RSP, session, &SvcResponse{
 			Body: rsp,
 			Err:  err,
 		})
 		if sErr != nil {
-			log.Errorf("reply svc msg err:%v", sErr)
+			s.log.Errorf("reply svc msg err:%v", sErr)
 		}
 	}
 }
@@ -143,7 +159,7 @@ func (s *Service) onRecvSvcRsp(source SVC_HANDLE, session uint32, msg interface{
 	rsp := msg.(*SvcResponse)
 	err := s.sessionStore.WakeUp(session, rsp)
 	if err != nil {
-		log.Errorf("wakeup session %d err: %v", session, err)
+		s.log.Errorf("wakeup session %d err: %v", session, err)
 	}
 }
 
@@ -193,6 +209,7 @@ func (s *Service) pushMsg(ctx context.Context, source SVC_HANDLE, msgType MsgTyp
 }
 
 func (s *Service) dispatchMsg(source SVC_HANDLE, msgType MsgType, session uint32, msg interface{}) {
+	s.log.Debugf("%s dispatch %s start from %s", s, msgType, s.server.GetService(source))
 	if msgType == MSG_TYPE_TIMER {
 		go s.onSvcTimer(session)
 	} else if msgType == MSG_TYPE_SVC_REQ {
@@ -203,14 +220,15 @@ func (s *Service) dispatchMsg(source SVC_HANDLE, msgType MsgType, session uint32
 		return
 	}
 	if !s.config.Parallel { // 伪并发
-		<- s.suspend
+		<-s.suspend
+		s.log.Debugf("%s dispatch %s done from %s", s, msgType, s.server.GetService(source))
 	}
 }
 
 func (s *Service) Serve() {
 	for {
 		select {
-		case <- s.msgNotify:
+		case <-s.msgNotify:
 			for {
 				msg := s.mqueue.Pop()
 				if msg == nil {

@@ -1,7 +1,7 @@
 package saber
 
 type Sidecar struct {
-	server *Server
+	server       *Server
 	clusterAddrs map[string]string // clustername: address
 }
 

@@ -1,54 +1,54 @@
 package log
 
-import "sync"
-
-var (
-	DefaultLogger Logger
-	initLog       sync.Once
-)
-
-//日志默认为stdout
-func init() {
-	initLog.Do(func() {
-		DefaultLogger = &LoggerStd{
-			level: LevelInfo,
-		}
-	})
+type LoggerWrapper struct {
+	logger Logger
 }
 
 // SetLogger 设置默认logger
-func SetLogger(logger Logger) {
-	DefaultLogger = logger
+func (lw *LoggerWrapper) SetLogger(logger Logger) {
+	lw.logger = logger
 }
 
-func Debug(args ...interface{}) {
-	DefaultLogger.Log(LevelDebug, args...)
+func (lw *LoggerWrapper) GetLogger() Logger {
+	return lw.logger
 }
 
-func Debugf(format string, args ...interface{}) {
-	DefaultLogger.Logf(LevelDebug, format, args...)
+func (lw *LoggerWrapper) Debug(args ...interface{}) {
+	lw.logger.Log(LevelDebug, args...)
 }
 
-func Info(args ...interface{}) {
-	DefaultLogger.Log(LevelInfo, args...)
+func (lw *LoggerWrapper) Debugf(format string, args ...interface{}) {
+	lw.logger.Logf(LevelDebug, format, args...)
 }
 
-func Infof(format string, args ...interface{}) {
-	DefaultLogger.Logf(LevelInfo, format, args...)
+func (lw *LoggerWrapper) Info(args ...interface{}) {
+	lw.logger.Log(LevelInfo, args...)
 }
 
-func Warning(args ...interface{}) {
-	DefaultLogger.Log(LevelWarning, args...)
+func (lw *LoggerWrapper) Infof(format string, args ...interface{}) {
+	lw.logger.Logf(LevelInfo, format, args...)
 }
 
-func Warningf(format string, args ...interface{}) {
-	DefaultLogger.Logf(LevelWarning, format, args...)
+func (lw *LoggerWrapper) Warning(args ...interface{}) {
+	lw.logger.Log(LevelWarning, args...)
 }
 
-func Error(args ...interface{}) {
-	DefaultLogger.Log(LevelError, args...)
+func (lw *LoggerWrapper) Warningf(format string, args ...interface{}) {
+	lw.logger.Logf(LevelWarning, format, args...)
 }
 
-func Errorf(format string, args ...interface{}) {
-	DefaultLogger.Logf(LevelError, format, args...)
+func (lw *LoggerWrapper) Error(args ...interface{}) {
+	lw.logger.Log(LevelError, args...)
+}
+
+func (lw *LoggerWrapper) Errorf(format string, args ...interface{}) {
+	lw.logger.Logf(LevelError, format, args...)
+}
+
+func NewLoggerWrapper() *LoggerWrapper {
+	return &LoggerWrapper{
+		logger: &LoggerStd{
+			level: LevelInfo,
+		},
+	}
 }
