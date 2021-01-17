@@ -122,17 +122,19 @@ type ClusterReqHead struct {
 
 func (h *ClusterReqHead) Pack(b []byte) (uintptr, error) {
 	// 检查buffer够不够上限
-	if len(b) < CLUSTER_REQ_HEAD_LEN {
+	// FIXME: 这里需要做精确判断
+	/*	if len(b) < CLUSTER_REQ_HEAD_LEN {
 		return 0, PACK_BUFFER_SHORT_ERR
-	}
+	}*/
 	return h.ClusterBaseHead.Pack(b)
 }
 
 func (h *ClusterReqHead) Unpack(b []byte) (uintptr, error) {
 	// 检查buffer够不够上限
-	if len(b) < CLUSTER_REQ_HEAD_LEN {
+	// FIXME: 这里需要做精确判断
+	/*	if len(b) < CLUSTER_REQ_HEAD_LEN {
 		return 0, PACK_BUFFER_SHORT_ERR
-	}
+	}*/
 	return h.ClusterBaseHead.Unpack(b)
 }
 
@@ -159,9 +161,10 @@ func (h *ClusterRspHead) ErrMsg() string {
 
 func (h *ClusterRspHead) Pack(b []byte) (uintptr, error) {
 	// 检查buffer够不够上限
-	if len(b) < CLUSTER_RSP_HEAD_LEN {
+	// FIXME: 这里需要做精确判断
+	/*	if len(b) < CLUSTER_RSP_HEAD_LEN {
 		return 0, PACK_BUFFER_SHORT_ERR
-	}
+	}*/
 	pos, err := h.ClusterBaseHead.Pack(b)
 	if err != nil {
 		return pos, err
@@ -181,9 +184,10 @@ func (h *ClusterRspHead) Pack(b []byte) (uintptr, error) {
 
 func (h *ClusterRspHead) Unpack(b []byte) (uintptr, error) {
 	// 检查buffer够不够上限
-	if len(b) < CLUSTER_RSP_HEAD_LEN {
+	// FIXME: 这里需要做精确判断
+	/*	if len(b) < CLUSTER_RSP_HEAD_LEN {
 		return 0, PACK_BUFFER_SHORT_ERR
-	}
+	}*/
 	pos, err := h.ClusterBaseHead.Unpack(b)
 	if err != nil {
 		return pos, err

@@ -3,6 +3,7 @@ package saber
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/xingshuo/saber/common/netframe"
@@ -90,6 +91,8 @@ func (r *GateReceiver) OnMessage(s netframe.Sender, b []byte) (int, error) {
 		return n, fmt.Errorf("data is nil")
 	}
 	msgType := MsgType(data[0])
+	// 剔除msgType
+	data = data[1:]
 	if msgType == MSG_TYPE_CLUSTER_REQ {
 		head := &ClusterReqHead{}
 		pos, err := head.Unpack(data)
@@ -138,6 +141,14 @@ func (sc *Sidecar) Init() error {
 		return err
 	}
 	sc.gateListener = l
+	go func() {
+		err := l.Serve()
+		if err != nil {
+			log.Fatalf("gate listener serve err:%v", err)
+		} else {
+			log.Println("gate listener quit serve")
+		}
+	}()
 	return nil
 }
 
