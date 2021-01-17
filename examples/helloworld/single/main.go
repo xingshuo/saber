@@ -23,7 +23,7 @@ type HeartBeat struct {
 }
 
 func main() {
-	server, err := sbapi.NewServer("config.json", nil)
+	server, err := sbapi.NewServer("config.json")
 	if err != nil {
 		log.Fatalf("new server err:%v", err)
 	}

@@ -48,7 +48,7 @@ func TestMsgQueue(t *testing.T) {
 	assert.Equal(t, 3, mq.tail)
 	assert.Equal(t, 11, mq.Len())
 	assert.Equal(t, 12, mq.cap)
-	assert.Equal(t, uint32(5), mq.Peek().session)
+	assert.Equal(t, uint32(5), mq.Peek().Session)
 	// 打印一下
 	mq.debug()
 	// 临界触发expand
@@ -57,5 +57,5 @@ func TestMsgQueue(t *testing.T) {
 	assert.Equal(t, 12, mq.tail)
 	assert.Equal(t, 12, mq.Len())
 	assert.Equal(t, 24, mq.cap)
-	assert.Equal(t, uint32(5), mq.Peek().session)
+	assert.Equal(t, uint32(5), mq.Peek().Session)
 }

@@ -1,0 +1,8 @@
+{
+  "ClusterName": "cluster_server",
+  "LocalAddr": "127.0.0.1:8905",
+  "RemoteAddrs": {
+    "cluster_client": "127.0.0.1:8904"
+  },
+  "TickIntervalMs": 500
+}

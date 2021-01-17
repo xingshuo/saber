@@ -28,9 +28,10 @@ type Server struct {
 	sidecar    *Sidecar
 	timerStore *TimeStore
 	log        *log.LoggerWrapper
+	codec      Codec
 }
 
-func (s *Server) Init(config string, logger log.Logger) error {
+func (s *Server) Init(config string) error {
 	s.services = make(map[SVC_HANDLE]*Service)
 	s.svcGroup = make(map[string]map[uint32]*Service)
 	err := s.loadConfig(config)
@@ -42,11 +43,9 @@ func (s *Server) Init(config string, logger log.Logger) error {
 	if err != nil {
 		return err
 	}
-	s.log = log.NewLoggerWrapper()
 	// log库有空再整理下, 这块需要重构
-	if logger != nil {
-		s.log.SetLogger(logger)
-	}
+	s.log = log.NewLoggerWrapper()
+	s.codec = &JsonCodec{}
 	s.timerStore = &TimeStore{
 		server: s,
 	}
@@ -54,8 +53,26 @@ func (s *Server) Init(config string, logger log.Logger) error {
 	return nil
 }
 
+func (s *Server) ClusterName() string {
+	return s.config.ClusterName
+}
+
+// NewServer后即刻设置, 不加锁了
+func (s *Server) SetLogger(l log.Logger) {
+	if l != nil {
+		s.log.SetLogger(l)
+	}
+}
+
 func (s *Server) GetLogger() log.Logger {
 	return s.log.GetLogger()
+}
+
+// NewServer后即刻设置, 不加锁了
+func (s *Server) SetCodec(c Codec) {
+	if c != nil {
+		s.codec = c
+	}
 }
 
 func (s *Server) loadConfig(config string) error {
@@ -75,7 +92,7 @@ func (s *Server) loadConfig(config string) error {
 func (s *Server) NewService(svcName string, svcID uint32) (*Service, error) {
 	s.rwMu.Lock()
 	defer s.rwMu.Unlock()
-	handle := SVC_HANDLE(utils.MakeServiceHandle(svcName, svcID))
+	handle := SVC_HANDLE(utils.MakeServiceHandle(s.ClusterName(), svcName, svcID))
 	if s.services[handle] != nil {
 		return nil, fmt.Errorf("register same service: %s-%d", svcName, svcID)
 	}
@@ -98,7 +115,7 @@ func (s *Server) NewService(svcName string, svcID uint32) (*Service, error) {
 func (s *Server) DelService(svcName string, svcID uint32) {
 	s.rwMu.Lock()
 	defer s.rwMu.Unlock()
-	handle := SVC_HANDLE(utils.MakeServiceHandle(svcName, svcID))
+	handle := SVC_HANDLE(utils.MakeServiceHandle(s.ClusterName(), svcName, svcID))
 	svc := s.services[handle]
 	if svc != nil {
 		svc.Exit()

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/xingshuo/saber/common/log"
+	"github.com/xingshuo/saber/common/utils"
 	saber "github.com/xingshuo/saber/src"
 )
 
@@ -14,12 +15,13 @@ const (
 	LevelError   = log.LevelError
 )
 
-func NewServer(config string, logger log.Logger) (*saber.Server, error) {
+func NewServer(config string) (*saber.Server, error) {
 	s := &saber.Server{}
-	err := s.Init(config, logger)
+	err := s.Init(config)
 	if err != nil {
 		return nil, err
 	}
+	s.GetLogger().Logf(LevelInfo, "cluster %s start run on %s", s.ClusterName(), utils.GetIP())
 	return s, nil
 }
 

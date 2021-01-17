@@ -30,6 +30,6 @@ func (e *SyncEvent) HasFired() bool {
 	return atomic.LoadInt32(&e.fired) == 1
 }
 
-func NewEvent() *SyncEvent {
+func NewSyncEvent() *SyncEvent {
 	return &SyncEvent{notifyFired: make(chan struct{})}
 }

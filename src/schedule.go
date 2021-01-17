@@ -44,8 +44,7 @@ func (ss *SessionStore) WakeUp(session uint32, rsp *SvcResponse) error {
 	}
 }
 
-func (ss *SessionStore) Wait(ctx context.Context, srcSvc *Service, dstSvc *Service, msg interface{}) (interface{}, error) {
-	session := ss.NewSessionID()
+func (ss *SessionStore) Wait(ctx context.Context, session uint32, srcSvc *Service, onWait func() error) (interface{}, error) {
 	ss.mu.Lock()
 	done := ss.pending[session]
 	// 理论上不可能出现
@@ -57,7 +56,10 @@ func (ss *SessionStore) Wait(ctx context.Context, srcSvc *Service, dstSvc *Servi
 	done = make(chan *SvcResponse, 1) // 防止写端先写入,读端还未进入读取状态, 设置缓存大小为1
 	ss.pending[session] = done
 	ss.mu.Unlock()
-	dstSvc.pushMsg(ctx, srcSvc.handle, MSG_TYPE_SVC_REQ, session, msg)
+	err := onWait()
+	if err != nil {
+		return nil, err
+	}
 	if !srcSvc.isParallel() { // 通知Serve继续处理其他消息
 		srcSvc.suspend <- struct{}{}
 	}

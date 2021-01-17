@@ -2,6 +2,7 @@ package saber
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -37,12 +38,15 @@ type Service struct {
 	sessionStore *SessionStore
 	suspend      chan struct{}
 	log          *log.LoggerWrapper
+	codec        Codec
+	packBuffer   [PACK_BUFFER_SIZE]byte
 }
 
 func (s *Service) String() string {
 	return fmt.Sprintf("[%s-%d]", s.name, s.instID)
 }
 
+//as C++ constructor
 func (s *Service) Init() {
 	s.msgNotify = make(chan struct{}, 1)
 	s.mqueue = NewMQueue(DEFAULT_MQ_SIZE)
@@ -50,11 +54,12 @@ func (s *Service) Init() {
 	s.sessionStore = &SessionStore{}
 	s.sessionStore.Init()
 	s.svcTimers = make(map[uint32]*SvcTimer)
-	s.exitNotify = lib.NewEvent()
-	s.exitDone = lib.NewEvent()
+	s.exitNotify = lib.NewSyncEvent()
+	s.exitDone = lib.NewSyncEvent()
 	s.suspend = make(chan struct{}, 1)
 	s.log = log.NewLoggerWrapper()
 	s.log.SetLogger(s.server.GetLogger())
+	s.codec = s.server.codec
 }
 
 // 服务启动时注册
@@ -92,6 +97,13 @@ func (s *Service) UnRegisterTimer(session uint32) {
 // 服务自定义logger实现
 func (s *Service) SetLogger(logger log.Logger) {
 	s.log.SetLogger(logger)
+}
+
+// 支持服务自定义, 以便与三方服务对接
+func (s *Service) SetCodec(c Codec) {
+	if c != nil {
+		s.codec = c
+	}
 }
 
 func (s *Service) isParallel() bool {
@@ -144,22 +156,82 @@ func (s *Service) onRecvSvcReq(source SVC_HANDLE, session uint32, msg interface{
 	// svc, _ := ctx.Value(CtxKeyService).(*Service)
 	rsp, err := handler(ctx, req.Body)
 	if session != 0 {
-		sErr := s.rawSend(ctx, source, MSG_TYPE_SVC_RSP, session, &SvcResponse{
+		rspErr := s.rawSend(ctx, source, MSG_TYPE_SVC_RSP, session, &SvcResponse{
 			Body: rsp,
 			Err:  err,
 		})
-		if sErr != nil {
-			s.log.Errorf("reply svc msg err:%v", sErr)
+		if rspErr != nil {
+			s.log.Errorf("reply svc msg err:%v", rspErr)
 		}
 	}
 }
 
 func (s *Service) onRecvSvcRsp(source SVC_HANDLE, session uint32, msg interface{}) {
-	// 根据session唤醒, 这里不需要唤醒suspend chan, 等发起rpc的goroutine处理完自己唤醒
+	// 根据session唤醒:如果成功, 这里不需要唤醒suspend chan, 等发起rpc的goroutine处理完自己唤醒
 	rsp := msg.(*SvcResponse)
 	err := s.sessionStore.WakeUp(session, rsp)
 	if err != nil {
-		s.log.Errorf("wakeup session %d err: %v", session, err)
+		s.log.Errorf("wakeup Session %d from %d err: %v", session, source, err)
+		// 失败要唤醒下
+		if !s.config.Parallel {
+			s.suspend <- struct{}{}
+		}
+	}
+}
+
+func (s *Service) onRecvClusterReq(source SVC_HANDLE, session uint32, msg interface{}) {
+	if !s.config.Parallel {
+		defer func() {
+			s.suspend <- struct{}{}
+		}()
+	}
+	cluster, exist := s.server.sidecar.GetClusterName(source)
+	req := msg.(*SvcRequest)
+	handler := s.svcHandlers[req.Method]
+	if handler == nil {
+		if session != 0 {
+			rpcErr := fmt.Errorf("unknown rpc func %s", req.Method)
+			if !exist {
+				s.log.Errorf("recv %v from unknown cluster", rpcErr)
+				return
+			}
+			data, err := NetPackResponse(s.packBuffer[:], s.codec, s.handle, session, source, req.Method, nil, rpcErr)
+			if err != nil {
+				s.log.Errorf("netpack rsp err:%v", err)
+				return
+			}
+			err = s.server.sidecar.Send(cluster, data)
+			if err != nil {
+				s.log.Errorf("reply cluster rpc err:%v", err)
+			}
+		}
+		return
+	}
+	ctx := context.WithValue(context.Background(), CtxKeyService, s)
+	rsp, rpcErr := handler(ctx, req.Body)
+	if session != 0 {
+		data, err := NetPackResponse(s.packBuffer[:], s.codec, s.handle, session, source, req.Method, rsp, rpcErr)
+		if err != nil {
+			s.log.Errorf("netpack rsp err:[%v]", err)
+			return
+		}
+		err = s.server.sidecar.Send(cluster, data)
+		if err != nil {
+			s.log.Errorf("reply cluster rpc err:[%v]", err)
+		}
+	}
+}
+
+func (s *Service) onRecvClusterRsp(source SVC_HANDLE, session uint32, msg interface{}) {
+	// 根据session唤醒:如果成功, 这里不需要唤醒suspend chan, 等发起rpc的goroutine处理完自己唤醒
+	rsp := msg.(*SvcResponse)
+	err := s.sessionStore.WakeUp(session, rsp)
+	if err != nil {
+		s.log.Errorf("wakeup cluster Session %d from err: %v", session, source, err)
+		// 失败要唤醒下
+		if !s.config.Parallel {
+			s.suspend <- struct{}{}
+		}
 	}
 }
 
@@ -172,8 +244,9 @@ func (s *Service) rawSend(ctx context.Context, dh SVC_HANDLE, msgType MsgType, s
 	return nil
 }
 
+// 节点内Notify
 func (s *Service) Send(ctx context.Context, svcName string, svcID uint32, method string, arg interface{}) error {
-	dh := SVC_HANDLE(utils.MakeServiceHandle(svcName, svcID))
+	dh := SVC_HANDLE(utils.MakeServiceHandle(s.server.ClusterName(), svcName, svcID))
 	req := &SvcRequest{
 		Method: method,
 		Body:   arg,
@@ -181,8 +254,9 @@ func (s *Service) Send(ctx context.Context, svcName string, svcID uint32, method
 	return s.rawSend(ctx, dh, MSG_TYPE_SVC_REQ, 0, req)
 }
 
+// 节点内Rpc
 func (s *Service) Call(ctx context.Context, svcName string, svcID uint32, method string, arg interface{}) (rsp interface{}, err error) {
-	dh := SVC_HANDLE(utils.MakeServiceHandle(svcName, svcID))
+	dh := SVC_HANDLE(utils.MakeServiceHandle(s.server.ClusterName(), svcName, svcID))
 	ds := s.server.GetService(dh)
 	if ds == nil {
 		return nil, fmt.Errorf("unknown dst svc %d", dh)
@@ -191,15 +265,44 @@ func (s *Service) Call(ctx context.Context, svcName string, svcID uint32, method
 		Method: method,
 		Body:   arg,
 	}
-	return s.sessionStore.Wait(ctx, s, ds, req)
+	session := s.sessionStore.NewSessionID()
+	onWait := func() error {
+		ds.pushMsg(ctx, s.handle, MSG_TYPE_SVC_REQ, session, req)
+		return nil
+	}
+	return s.sessionStore.Wait(ctx, session, s, onWait)
+}
+
+// 跨节点Notify
+func (s *Service) SendCluster(ctx context.Context, clusterName, svcName string, svcID uint32, method string, arg interface{}) error {
+	dh := SVC_HANDLE(utils.MakeServiceHandle(clusterName, svcName, svcID))
+	data, err := NetPackRequest(s.packBuffer[:], s.codec, s.handle, 0, dh, method, arg)
+	if err != nil {
+		return err
+	}
+	return s.server.sidecar.Send(clusterName, data)
+}
+
+// 跨节点Rpc
+func (s *Service) CallCluster(ctx context.Context, clusterName, svcName string, svcID uint32, method string, arg interface{}) (rsp interface{}, err error) {
+	dh := SVC_HANDLE(utils.MakeServiceHandle(clusterName, svcName, svcID))
+	session := s.sessionStore.NewSessionID()
+	data, err := NetPackRequest(s.packBuffer[:], s.codec, s.handle, session, dh, method, arg)
+	if err != nil {
+		return nil, err
+	}
+	onWait := func() error {
+		return s.server.sidecar.Send(clusterName, data)
+	}
+	return s.sessionStore.Wait(ctx, session, s, onWait)
 }
 
 func (s *Service) pushMsg(ctx context.Context, source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
 	s.mqueue.Push(&Message{
-		source:  source,
-		msgType: msgType,
-		session: session,
-		data:    data,
+		Source:  source,
+		MsgType: msgType,
+		Session: session,
+		Data:    data,
 	})
 	// 这里性能会不会有问题??
 	select {
@@ -208,17 +311,60 @@ func (s *Service) pushMsg(ctx context.Context, source SVC_HANDLE, msgType MsgTyp
 	}
 }
 
+func (s *Service) pushClusterRequest(ctx context.Context, head *ClusterReqHead, body []byte) {
+	arg, err := s.codec.Unmarshal(MSG_TYPE_CLUSTER_REQ, head.Method(), body)
+	if err != nil {
+		s.log.Errorf("codec.Unmarshal cluster req err:%v", err)
+		return
+	}
+	req := &SvcRequest{
+		Method: head.Method(),
+		Body:   arg,
+	}
+	s.pushMsg(ctx, SVC_HANDLE(head.source), MSG_TYPE_CLUSTER_REQ, head.session, req)
+}
+
+func (s *Service) pushClusterResponse(ctx context.Context, head *ClusterRspHead, body []byte) {
+	if head.errCode == ErrCode_OK {
+		arg, err := s.codec.Unmarshal(MSG_TYPE_CLUSTER_RSP, head.Method(), body)
+		if err != nil {
+			s.log.Errorf("codec.Unmarshal cluster rsp err:%v", err)
+			return
+		}
+		rsp := &SvcResponse{
+			Body: arg,
+		}
+		s.pushMsg(ctx, SVC_HANDLE(head.source), MSG_TYPE_CLUSTER_RSP, head.session, rsp)
+	} else {
+		rsp := &SvcResponse{
+			Err: errors.New(head.ErrMsg()),
+		}
+		s.pushMsg(ctx, SVC_HANDLE(head.source), MSG_TYPE_CLUSTER_RSP, head.session, rsp)
+	}
+}
+
 func (s *Service) dispatchMsg(source SVC_HANDLE, msgType MsgType, session uint32, msg interface{}) {
-	s.log.Debugf("%s dispatch %s start from %s", s, msgType, s.server.GetService(source))
+	if msgType.IsClusterMsg() {
+		cluster, _ := s.server.sidecar.GetClusterName(source)
+		s.log.Debugf("%s dispatch %s start from %s", s, msgType, cluster)
+	} else {
+		s.log.Debugf("%s dispatch %s start from %s", s, msgType, s.server.GetService(source))
+	}
+
 	if msgType == MSG_TYPE_TIMER {
 		go s.onSvcTimer(session)
 	} else if msgType == MSG_TYPE_SVC_REQ {
 		go s.onRecvSvcReq(source, session, msg)
 	} else if msgType == MSG_TYPE_SVC_RSP {
 		go s.onRecvSvcRsp(source, session, msg)
+	} else if msgType == MSG_TYPE_CLUSTER_REQ {
+		go s.onRecvClusterReq(source, session, msg)
+	} else if msgType == MSG_TYPE_CLUSTER_RSP {
+		go s.onRecvClusterRsp(source, session, msg)
 	} else {
 		return
 	}
+
 	if !s.config.Parallel { // 伪并发
 		<-s.suspend
 		s.log.Debugf("%s dispatch %s done from %s", s, msgType, s.server.GetService(source))
@@ -226,6 +372,7 @@ func (s *Service) dispatchMsg(source SVC_HANDLE, msgType MsgType, session uint32
 }
 
 func (s *Service) Serve() {
+	s.log.Infof("cluster %s new service %s handle:%d", s.server.ClusterName(), s, s.handle)
 	for {
 		select {
 		case <-s.msgNotify:
@@ -234,7 +381,7 @@ func (s *Service) Serve() {
 				if msg == nil {
 					break
 				}
-				s.dispatchMsg(msg.source, msg.msgType, msg.session, msg.data)
+				s.dispatchMsg(msg.Source, msg.MsgType, msg.Session, msg.Data)
 			}
 		case <-s.exitNotify.Done():
 			for {
@@ -242,7 +389,7 @@ func (s *Service) Serve() {
 				if msg == nil {
 					break
 				}
-				s.dispatchMsg(msg.source, msg.msgType, msg.session, msg.data)
+				s.dispatchMsg(msg.Source, msg.MsgType, msg.Session, msg.Data)
 			}
 			s.exitDone.Fire()
 			return
