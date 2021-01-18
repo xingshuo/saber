@@ -81,25 +81,45 @@ func (h *ClusterBaseHead) Pack(b []byte) (uintptr, error) {
 	return pos, nil
 }
 
+// 这里需要做精确判断
 func (h *ClusterBaseHead) Unpack(b []byte) (uintptr, error) {
 	var (
 		pos     uintptr
 		nextPos uintptr
 	)
 	// source
+	nextPos = pos + unsafe.Sizeof(h.source)
+	if len(b) < int(nextPos) {
+		return pos, PACK_BUFFER_SHORT_ERR
+	}
 	h.source = binary.LittleEndian.Uint64(b[pos:])
-	pos = pos + unsafe.Sizeof(h.source)
+	pos = nextPos
 	// session
+	nextPos = pos + unsafe.Sizeof(h.session)
+	if len(b) < int(nextPos) {
+		return pos, PACK_BUFFER_SHORT_ERR
+	}
 	h.session = binary.LittleEndian.Uint32(b[pos:])
-	pos = pos + unsafe.Sizeof(h.session)
+	pos = nextPos
 	// destination
+	nextPos = pos + unsafe.Sizeof(h.destination)
+	if len(b) < int(nextPos) {
+		return pos, PACK_BUFFER_SHORT_ERR
+	}
 	h.destination = binary.LittleEndian.Uint64(b[pos:])
-	pos = pos + unsafe.Sizeof(h.destination)
+	pos = nextPos
 	// mdLen
+	nextPos = pos + unsafe.Sizeof(h.mdLen)
+	if len(b) < int(nextPos) {
+		return pos, PACK_BUFFER_SHORT_ERR
+	}
 	h.mdLen = b[pos]
-	pos = pos + unsafe.Sizeof(h.mdLen)
+	pos = nextPos
 	// method
 	nextPos = pos + uintptr(h.mdLen)
+	if len(b) < int(nextPos) {
+		return pos, PACK_BUFFER_SHORT_ERR
+	}
 	copy(h.method[:], b[pos:nextPos])
 	pos = nextPos
 
@@ -121,21 +141,11 @@ type ClusterReqHead struct {
 }
 
 func (h *ClusterReqHead) Pack(b []byte) (uintptr, error) {
-	// 检查buffer够不够上限
-	// FIXME: 这里需要做精确判断
-	/*	if len(b) < CLUSTER_REQ_HEAD_LEN {
+	// 检查buffer够不够上限,上限会比实际需要用到的多,序列化时buffer一般会足够大
+	if len(b) < CLUSTER_REQ_HEAD_LEN {
 		return 0, PACK_BUFFER_SHORT_ERR
-	}*/
+	}
 	return h.ClusterBaseHead.Pack(b)
-}
-
-func (h *ClusterReqHead) Unpack(b []byte) (uintptr, error) {
-	// 检查buffer够不够上限
-	// FIXME: 这里需要做精确判断
-	/*	if len(b) < CLUSTER_REQ_HEAD_LEN {
-		return 0, PACK_BUFFER_SHORT_ERR
-	}*/
-	return h.ClusterBaseHead.Unpack(b)
 }
 
 type ClusterRspHead struct {
@@ -160,11 +170,10 @@ func (h *ClusterRspHead) ErrMsg() string {
 }
 
 func (h *ClusterRspHead) Pack(b []byte) (uintptr, error) {
-	// 检查buffer够不够上限
-	// FIXME: 这里需要做精确判断
-	/*	if len(b) < CLUSTER_RSP_HEAD_LEN {
+	// 检查buffer够不够上限,上限会比实际需要用到的多,序列化时buffer一般会足够大
+	if len(b) < CLUSTER_RSP_HEAD_LEN {
 		return 0, PACK_BUFFER_SHORT_ERR
-	}*/
+	}
 	pos, err := h.ClusterBaseHead.Pack(b)
 	if err != nil {
 		return pos, err
@@ -183,23 +192,29 @@ func (h *ClusterRspHead) Pack(b []byte) (uintptr, error) {
 }
 
 func (h *ClusterRspHead) Unpack(b []byte) (uintptr, error) {
-	// 检查buffer够不够上限
-	// FIXME: 这里需要做精确判断
-	/*	if len(b) < CLUSTER_RSP_HEAD_LEN {
-		return 0, PACK_BUFFER_SHORT_ERR
-	}*/
 	pos, err := h.ClusterBaseHead.Unpack(b)
 	if err != nil {
 		return pos, err
 	}
+	nextPos := pos + unsafe.Sizeof(h.errCode)
+	if len(b) < int(nextPos) {
+		return pos, PACK_BUFFER_SHORT_ERR
+	}
 	h.errCode = binary.LittleEndian.Uint32(b[pos:])
-	pos = pos + unsafe.Sizeof(h.errCode)
+	pos = nextPos
 	if h.errCode != ErrCode_OK {
 		// emLen
+		nextPos = pos + unsafe.Sizeof(h.emLen)
+		if len(b) < int(nextPos) {
+			return pos, PACK_BUFFER_SHORT_ERR
+		}
 		h.emLen = b[pos]
-		pos = pos + unsafe.Sizeof(h.emLen)
+		pos = nextPos
 		// errMsg
 		nextPos := pos + uintptr(h.emLen)
+		if len(b) < int(nextPos) {
+			return pos, PACK_BUFFER_SHORT_ERR
+		}
 		copy(h.errMsg[:], b[pos:nextPos])
 		pos = nextPos
 	}
