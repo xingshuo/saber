@@ -2,12 +2,21 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"syscall"
 
 	"github.com/goinggo/mapstructure"
 	sbapi "github.com/xingshuo/saber/pkg"
+)
+
+var (
+	rpcSvcNum int
+)
+
+const (
+	BaseSvcID uint32 = 101
 )
 
 type ReqLogin struct {
@@ -19,26 +28,34 @@ type RspLogin struct {
 	Status int
 }
 
+func init() {
+	flag.IntVar(&rpcSvcNum, "svc", 1, "rpc svc num")
+}
+
 func main() {
+	flag.Parse()
 	server, err := sbapi.NewServer("config.json")
 	if err != nil {
 		log.Fatalf("new server err:%v", err)
 	}
-	lobbySvc, err := server.NewService("lobby", 101)
-	if err != nil {
-		log.Fatalf("new lobby service err:%v", err)
-	}
-	lobbySvc.RegisterSvcHandler("ReqLogin", func(ctx context.Context, req interface{}) (interface{}, error) {
-		msg := &ReqLogin{}
-		err := mapstructure.Decode(req, msg)
+	for i := 0; i < rpcSvcNum; i++ {
+		svcID := BaseSvcID + uint32(i)
+		lobbySvc, err := server.NewService("lobby", svcID)
 		if err != nil {
-			return nil, fmt.Errorf("proto error %w", err)
+			log.Fatalf("new lobby service err:%v", err)
 		}
-		if msg.Gid/100000 != 101 {
-			log.Fatalf("gid err %d", msg.Gid)
-		}
-		log.Printf("%s on req login %d", msg.Name, msg.Gid)
-		return &RspLogin{Status: 200}, nil
-	})
+		lobbySvc.RegisterSvcHandler("ReqLogin", func(ctx context.Context, req interface{}) (interface{}, error) {
+			msg := &ReqLogin{}
+			err := mapstructure.Decode(req, msg)
+			if err != nil {
+				return nil, fmt.Errorf("proto error %w", err)
+			}
+			if msg.Gid/100000 != 101 {
+				log.Fatalf("gid err %d", msg.Gid)
+			}
+			//fmt.Printf("%s on req login %d", msg.Name, msg.Gid)
+			return &RspLogin{Status: 200}, nil
+		})
+	}
 	server.WaitExit(syscall.SIGINT)
 }

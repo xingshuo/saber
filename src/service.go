@@ -187,6 +187,12 @@ func (s *Service) onRecvClusterReq(source SVC_HANDLE, session uint32, msg interf
 	}
 	cluster, exist := s.server.sidecar.GetClusterName(source)
 	req := msg.(*SvcRequest)
+	arg, err := s.codec.Unmarshal(MSG_TYPE_CLUSTER_REQ, req.Method, req.Body.([]byte))
+	if err != nil {
+		s.log.Errorf("codec.Unmarshal cluster req err:%v", err)
+		return
+	}
+
 	handler := s.svcHandlers[req.Method]
 	if handler == nil {
 		if session != 0 {
@@ -208,7 +214,7 @@ func (s *Service) onRecvClusterReq(source SVC_HANDLE, session uint32, msg interf
 		return
 	}
 	ctx := context.WithValue(context.Background(), CtxKeyService, s)
-	rsp, rpcErr := handler(ctx, req.Body)
+	rsp, rpcErr := handler(ctx, arg)
 	if session != 0 {
 		data, err := NetPackResponse(s.packBuffer[:], s.codec, s.handle, session, source, req.Method, rsp, rpcErr)
 		if err != nil {
@@ -225,6 +231,15 @@ func (s *Service) onRecvClusterReq(source SVC_HANDLE, session uint32, msg interf
 func (s *Service) onRecvClusterRsp(source SVC_HANDLE, session uint32, msg interface{}) {
 	// 根据session唤醒:如果成功, 这里不需要唤醒suspend chan, 等发起rpc的goroutine处理完自己唤醒
 	rsp := msg.(*SvcResponse)
+	if rsp.Err == nil {
+		body := rsp.Body.(*ClusterRspBody)
+		arg, err := s.codec.Unmarshal(MSG_TYPE_CLUSTER_RSP, body.Method, body.Body)
+		if err != nil {
+			s.log.Errorf("codec.Unmarshal cluster rsp err:%v", err)
+			return
+		}
+		rsp.Body = arg
+	}
 	err := s.sessionStore.WakeUp(session, rsp)
 	if err != nil {
 		s.log.Errorf("wakeup cluster Session %d from err: %v", session, source, err)
@@ -312,27 +327,20 @@ func (s *Service) pushMsg(ctx context.Context, source SVC_HANDLE, msgType MsgTyp
 }
 
 func (s *Service) pushClusterRequest(ctx context.Context, head *ClusterReqHead, body []byte) {
-	arg, err := s.codec.Unmarshal(MSG_TYPE_CLUSTER_REQ, head.Method(), body)
-	if err != nil {
-		s.log.Errorf("codec.Unmarshal cluster req err:%v", err)
-		return
-	}
 	req := &SvcRequest{
 		Method: head.Method(),
-		Body:   arg,
+		Body:   body,
 	}
 	s.pushMsg(ctx, SVC_HANDLE(head.source), MSG_TYPE_CLUSTER_REQ, head.session, req)
 }
 
 func (s *Service) pushClusterResponse(ctx context.Context, head *ClusterRspHead, body []byte) {
 	if head.errCode == ErrCode_OK {
-		arg, err := s.codec.Unmarshal(MSG_TYPE_CLUSTER_RSP, head.Method(), body)
-		if err != nil {
-			s.log.Errorf("codec.Unmarshal cluster rsp err:%v", err)
-			return
-		}
 		rsp := &SvcResponse{
-			Body: arg,
+			Body: &ClusterRspBody{
+				Method: head.Method(),
+				Body:   body,
+			},
 		}
 		s.pushMsg(ctx, SVC_HANDLE(head.source), MSG_TYPE_CLUSTER_RSP, head.session, rsp)
 	} else {

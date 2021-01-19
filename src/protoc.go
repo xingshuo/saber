@@ -45,6 +45,12 @@ type SvcResponse struct {
 	Err  error
 }
 
+// 由sidecar挂载到SvcResponse.Body上,分发给目标service处理
+type ClusterRspBody struct {
+	Method string
+	Body   []byte
+}
+
 type Message struct {
 	Source  SVC_HANDLE
 	MsgType MsgType

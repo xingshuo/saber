@@ -17,11 +17,13 @@ import (
 var (
 	concyNum       int
 	reqNumPerConcy int
+	rpcSvcNum      int
 	seq            uint32 = 1
 )
 
 const (
 	MSG_SABER kite.MsgType = 4
+	BaseSvcID uint32       = 101
 )
 
 type ReqLogin struct {
@@ -73,7 +75,11 @@ func (rh *ReqHandler) Init(req *kite.Request, results chan<- *kite.Response) err
 
 func (rh *ReqHandler) OnRequest() error {
 	startTime := time.Now()
-	reply, err := rh.client.CallCluster(context.Background(), "stress_server", "lobby", 101, "ReqLogin", &ReqLogin{
+	svcID := BaseSvcID
+	if rpcSvcNum > 0 {
+		svcID += rh.svcID % uint32(rpcSvcNum)
+	}
+	reply, err := rh.client.CallCluster(context.Background(), "stress_server", "lobby", svcID, "ReqLogin", &ReqLogin{
 		Gid:  uint64(10100000 + rh.svcID),
 		Name: uuid.New().String()[:8],
 	})
@@ -100,6 +106,7 @@ func (rh *ReqHandler) Close() {
 func init() {
 	flag.IntVar(&concyNum, "c", 20, "concurrency num")
 	flag.IntVar(&reqNumPerConcy, "n", 50, "per concurrency req num")
+	flag.IntVar(&rpcSvcNum, "svc", 1, "rpc svc num")
 	kite.RegisterMsgType(MSG_SABER, "SABER")
 }
 
