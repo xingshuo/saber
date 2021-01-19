@@ -1,0 +1,8 @@
+{
+  "ClusterName": "stress_client",
+  "LocalAddr": "127.0.0.1:8907",
+  "RemoteAddrs": {
+    "stress_server": "127.0.0.1:8908"
+  },
+  "TickIntervalMs": 1000
+}
