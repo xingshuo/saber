@@ -1,4 +1,4 @@
-基于golang实现的伪并发框架
+基于golang实现的Actor框架
 ====
 ![flowchart](https://github.com/xingshuo/saber/blob/master/res/saber.png)
 
