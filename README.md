@@ -1,8 +1,8 @@
 基于golang实现的伪并发框架
 ====
-![flowchart](https://github.com/xingshuo/saber/blob/master/saber.png)
+![flowchart](https://github.com/xingshuo/saber/blob/master/res/saber.png)
 
-![flowchart](https://github.com/xingshuo/saber/blob/master/protoc.png)
+![flowchart](https://github.com/xingshuo/saber/blob/master/res/protoc.png)
 
 当前支持功能
 ----
