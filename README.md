@@ -1,10 +1,8 @@
 基于golang实现的伪并发框架
 ====
-    一个试验品
-    
-架构图
-----
 ![flowchart](https://github.com/xingshuo/saber/blob/master/saber.png)
+
+![flowchart](https://github.com/xingshuo/saber/blob/master/protoc.png)
 
 当前支持功能
 ----
@@ -80,8 +78,6 @@
 
 待实现
 ----
-    1. 补充整体协议格式说明
-    2. 补充完整架构图
-    3. 伪并发模式压测数据统计
-    4. 同时支持伪并发和真并发,优化代码以及数据结构
-    5. log重构, metric, trace接入
+    1. 同时支持伪并发和真并发
+    2. 优化: 性能, 代码, 数据结构
+    3. log重构, metric, trace接入
