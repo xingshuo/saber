@@ -1,6 +1,10 @@
 基于golang实现的伪并发框架
 ====
     一个试验品
+    
+架构图
+----
+![flowchart](https://github.com/xingshuo/saber/blob/master/saber.png)
 
 当前支持功能
 ----
