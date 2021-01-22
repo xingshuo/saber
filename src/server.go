@@ -113,15 +113,16 @@ func (s *Server) NewService(svcName string, svcID uint32) (*Service, error) {
 }
 
 func (s *Server) DelService(svcName string, svcID uint32) {
-	s.rwMu.Lock()
-	defer s.rwMu.Unlock()
 	handle := SVC_HANDLE(utils.MakeServiceHandle(s.ClusterName(), svcName, svcID))
+	s.rwMu.Lock()
 	svc := s.services[handle]
+	delete(s.services, handle)
+	delete(s.svcGroup[svcName], svcID)
+	s.rwMu.Unlock()
+	// 加锁的粒度越小越好, 这里发生过很隐晦的死锁...
 	if svc != nil {
 		svc.Exit()
 	}
-	delete(s.services, handle)
-	delete(s.svcGroup[svcName], svcID)
 }
 
 func (s *Server) GetService(handle SVC_HANDLE) *Service {
