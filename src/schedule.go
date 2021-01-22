@@ -2,6 +2,7 @@ package saber
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -71,7 +72,7 @@ func (ss *SessionStore) Wait(ctx context.Context, session uint32, srcSvc *Servic
 			ss.mu.Lock()
 			delete(ss.pending, session)
 			ss.mu.Unlock()
-			return nil, RPC_TIMEOUT_ERR
+			return nil, fmt.Errorf("%w session %d", RPC_TIMEOUT_ERR, session)
 		case rsp := <-done:
 			timer.Stop()
 			return rsp.Body, rsp.Err

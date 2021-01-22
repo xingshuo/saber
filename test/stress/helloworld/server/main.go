@@ -5,7 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"syscall"
+
+	_ "net/http/pprof"
 
 	"github.com/goinggo/mapstructure"
 	sbapi "github.com/xingshuo/saber/pkg"
@@ -34,6 +37,14 @@ func init() {
 
 func main() {
 	flag.Parse()
+	// pprof
+	go func() {
+		err := http.ListenAndServe(":9090", nil)
+		if err != nil {
+			log.Fatalf("failed to serve pprof: %v", err)
+		}
+	}()
+
 	server, err := sbapi.NewServer("config.json")
 	if err != nil {
 		log.Fatalf("new server err:%v", err)

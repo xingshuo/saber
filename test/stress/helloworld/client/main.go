@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"flag"
 	"log"
+	"net/http"
 	"sync/atomic"
 	"time"
+
+	_ "net/http/pprof"
 
 	"github.com/google/uuid"
 	kite "github.com/xingshuo/kite/pkg"
@@ -79,7 +82,8 @@ func (rh *ReqHandler) OnRequest() error {
 	if rpcSvcNum > 0 {
 		svcID += rh.svcID % uint32(rpcSvcNum)
 	}
-	reply, err := rh.client.CallCluster(context.Background(), "stress_server", "lobby", svcID, "ReqLogin", &ReqLogin{
+	ctx := context.WithValue(context.Background(), saber.CtxKeyRpcTimeoutMS, 3*time.Second)
+	reply, err := rh.client.CallCluster(ctx, "stress_server", "lobby", svcID, "ReqLogin", &ReqLogin{
 		Gid:  uint64(10100000 + rh.svcID),
 		Name: uuid.New().String()[:8],
 	})
@@ -112,6 +116,13 @@ func init() {
 
 func main() {
 	flag.Parse()
+	// pprof
+	go func() {
+		err := http.ListenAndServe(":8080", nil)
+		if err != nil {
+			log.Fatalf("failed to serve pprof: %v", err)
+		}
+	}()
 	ss, err := sbapi.NewServer("config.json")
 	if err != nil {
 		log.Fatalf("new server err:%v", err)

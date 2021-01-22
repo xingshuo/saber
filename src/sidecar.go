@@ -102,6 +102,8 @@ func (r *GateReceiver) OnMessage(s netframe.Sender, b []byte) (int, error) {
 		dstSvc := r.server.GetService(SVC_HANDLE(head.destination))
 		if dstSvc != nil {
 			dstSvc.pushClusterRequest(context.Background(), head, data[pos:])
+		} else {
+			return n, fmt.Errorf("%s not find dst svc %d", msgType, head.destination)
 		}
 	} else if msgType == MSG_TYPE_CLUSTER_RSP {
 		head := &ClusterRspHead{}
@@ -112,6 +114,8 @@ func (r *GateReceiver) OnMessage(s netframe.Sender, b []byte) (int, error) {
 		dstSvc := r.server.GetService(SVC_HANDLE(head.destination))
 		if dstSvc != nil {
 			dstSvc.pushClusterResponse(context.Background(), head, data[pos:])
+		} else {
+			return n, fmt.Errorf("%s not find dst svc %d", msgType, head.destination)
 		}
 	}
 	return n, nil

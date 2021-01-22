@@ -8,7 +8,7 @@ import (
 
 func TestMsgQueue(t *testing.T) {
 	mq := NewMQueue(3)
-	data := []*Message{
+	data := []Message{
 		{0, MSG_TYPE_TIMER, 1, nil},
 		{0, MSG_TYPE_TIMER, 2, nil},
 		{0, MSG_TYPE_TIMER, 3, nil},
@@ -19,7 +19,7 @@ func TestMsgQueue(t *testing.T) {
 		{0, MSG_TYPE_TIMER, 8, nil},
 	}
 	for i := range data {
-		mq.Push(data[i])
+		mq.Push(data[i].Source, data[i].MsgType, data[i].Session, data[i].Data)
 	}
 	assert.Equal(t, 0, mq.head)
 	assert.Equal(t, 8, mq.tail)
@@ -32,7 +32,7 @@ func TestMsgQueue(t *testing.T) {
 	assert.Equal(t, 4, mq.head)
 	assert.Equal(t, 8, mq.tail)
 	assert.Equal(t, 4, mq.Len())
-	data = []*Message{
+	data = []Message{
 		{0, MSG_TYPE_TIMER, 9, nil},
 		{0, MSG_TYPE_TIMER, 10, nil},
 		{0, MSG_TYPE_TIMER, 11, nil},
@@ -42,20 +42,22 @@ func TestMsgQueue(t *testing.T) {
 		{0, MSG_TYPE_TIMER, 15, nil},
 	}
 	for i := range data {
-		mq.Push(data[i])
+		mq.Push(data[i].Source, data[i].MsgType, data[i].Session, data[i].Data)
 	}
 	assert.Equal(t, 4, mq.head)
 	assert.Equal(t, 3, mq.tail)
 	assert.Equal(t, 11, mq.Len())
 	assert.Equal(t, 12, mq.cap)
-	assert.Equal(t, uint32(5), mq.Peek().Session)
+	_, _, _, session, _ := mq.Peek()
+	assert.Equal(t, uint32(5), session)
 	// 打印一下
 	mq.debug()
 	// 临界触发expand
-	mq.Push(&Message{0, MSG_TYPE_TIMER, 16, nil})
+	mq.Push(0, MSG_TYPE_TIMER, 16, nil)
 	assert.Equal(t, 0, mq.head)
 	assert.Equal(t, 12, mq.tail)
 	assert.Equal(t, 12, mq.Len())
 	assert.Equal(t, 24, mq.cap)
-	assert.Equal(t, uint32(5), mq.Peek().Session)
+	_, _, _, session, _ = mq.Peek()
+	assert.Equal(t, uint32(5), session)
 }

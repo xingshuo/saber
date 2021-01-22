@@ -313,12 +313,7 @@ func (s *Service) CallCluster(ctx context.Context, clusterName, svcName string, 
 }
 
 func (s *Service) pushMsg(ctx context.Context, source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
-	s.mqueue.Push(&Message{
-		Source:  source,
-		MsgType: msgType,
-		Session: session,
-		Data:    data,
-	})
+	s.mqueue.Push(source, msgType, session, data)
 	// 这里性能会不会有问题??
 	select {
 	case s.msgNotify <- struct{}{}:
@@ -385,19 +380,19 @@ func (s *Service) Serve() {
 		select {
 		case <-s.msgNotify:
 			for {
-				msg := s.mqueue.Pop()
-				if msg == nil {
+				empty, source, msgType, session, data := s.mqueue.Pop()
+				if empty {
 					break
 				}
-				s.dispatchMsg(msg.Source, msg.MsgType, msg.Session, msg.Data)
+				s.dispatchMsg(source, msgType, session, data)
 			}
 		case <-s.exitNotify.Done():
 			for {
-				msg := s.mqueue.Pop()
-				if msg == nil {
+				empty, source, msgType, session, data := s.mqueue.Pop()
+				if empty {
 					break
 				}
-				s.dispatchMsg(msg.Source, msg.MsgType, msg.Session, msg.Data)
+				s.dispatchMsg(source, msgType, session, data)
 			}
 			s.exitDone.Fire()
 			return
