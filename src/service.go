@@ -313,11 +313,8 @@ func (s *Service) CallCluster(ctx context.Context, clusterName, svcName string, 
 }
 
 func (s *Service) pushMsg(ctx context.Context, source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
-	s.mqueue.Push(source, msgType, session, data)
-	// 这里性能会不会有问题??
-	select {
-	case s.msgNotify <- struct{}{}:
-	default:
+	if s.mqueue.Push(source, msgType, session, data) {
+		s.msgNotify <- struct{}{}
 	}
 }
 

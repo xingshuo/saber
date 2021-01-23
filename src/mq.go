@@ -35,9 +35,10 @@ func (mq *MsgQueue) expand() {
 	mq.cap *= 2
 }
 
-func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
+func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) (first bool) {
 	mq.rwMu.Lock()
 	defer mq.rwMu.Unlock()
+	first = (mq.head == mq.tail)
 	back := &mq.data[mq.tail]
 	back.Source = source
 	back.MsgType = msgType
@@ -50,6 +51,7 @@ func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, dat
 	if mq.head == mq.tail {
 		mq.expand()
 	}
+	return first
 }
 
 func (mq *MsgQueue) Pop() (empty bool, source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {

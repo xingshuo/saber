@@ -74,8 +74,9 @@ func (p *ClusterProxy) Exit() {
 }
 
 type GateReceiver struct {
-	server     *Server
-	packBuffer [PACK_BUFFER_SIZE]byte
+	server        *Server
+	reqHeadBuffer ClusterReqHead
+	rspHeadBuffer ClusterRspHead
 }
 
 func (r *GateReceiver) OnConnected(s netframe.Sender) error {
@@ -94,7 +95,7 @@ func (r *GateReceiver) OnMessage(s netframe.Sender, b []byte) (int, error) {
 	// 剔除msgType
 	data = data[1:]
 	if msgType == MSG_TYPE_CLUSTER_REQ {
-		head := &ClusterReqHead{}
+		head := &r.reqHeadBuffer
 		pos, err := head.Unpack(data)
 		if err != nil {
 			return n, err
@@ -106,7 +107,7 @@ func (r *GateReceiver) OnMessage(s netframe.Sender, b []byte) (int, error) {
 			return n, fmt.Errorf("%s not find dst svc %d", msgType, head.destination)
 		}
 	} else if msgType == MSG_TYPE_CLUSTER_RSP {
-		head := &ClusterRspHead{}
+		head := &r.rspHeadBuffer
 		pos, err := head.Unpack(data)
 		if err != nil {
 			return n, err
