@@ -140,6 +140,9 @@ func (s *Service) onRecvSvcReq(source SVC_HANDLE, session uint32, msg interface{
 	if !s.config.Parallel {
 		defer func() {
 			s.suspend <- struct{}{}
+			if e := recover(); e != nil {
+				s.log.Errorf("panic occurred on recv svc req: %v", e)
+			}
 		}()
 	}
 	req := msg.(*SvcRequest)
@@ -186,6 +189,9 @@ func (s *Service) onRecvClusterReq(source SVC_HANDLE, session uint32, msg interf
 	if !s.config.Parallel {
 		defer func() {
 			s.suspend <- struct{}{}
+			if e := recover(); e != nil {
+				s.log.Errorf("panic occurred on recv cluster req: %v", e)
+			}
 		}()
 	}
 	cluster, exist := s.server.sidecar.GetClusterName(source)

@@ -64,7 +64,6 @@ func (s *Server) GetLogSystem() *log.LogSystem {
 	return s.log
 }
 
-// NewServer后即刻设置, 不加锁了
 func (s *Server) SetCodec(c Codec) {
 	if c != nil {
 		s.codec = c

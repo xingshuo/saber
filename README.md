@@ -80,4 +80,4 @@
 ----
     1. 同时支持伪并发和真并发
     2. 优化: 性能, 代码, 数据结构
-    3. log重构, metric, trace接入
+    3. 文件logger实现, metric, trace接入
