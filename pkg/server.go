@@ -27,7 +27,7 @@ type Server struct {
 	svcGroup   map[string]map[uint32]*Service
 	sidecar    *Sidecar
 	timerStore *TimeStore
-	log        *log.LoggerWrapper
+	log        *log.LogSystem
 	codec      Codec
 }
 
@@ -43,8 +43,7 @@ func (s *Server) Init(config string) error {
 	if err != nil {
 		return err
 	}
-	// log库有空再整理下, 这块需要重构
-	s.log = log.NewLoggerWrapper()
+	s.log = log.NewStdLogSystem(log.LevelInfo)
 	s.codec = &JsonCodec{}
 	s.timerStore = &TimeStore{
 		server: s,
@@ -57,15 +56,12 @@ func (s *Server) ClusterName() string {
 	return s.config.ClusterName
 }
 
-// NewServer后即刻设置, 不加锁了
-func (s *Server) SetLogger(l log.Logger) {
-	if l != nil {
-		s.log.SetLogger(l)
-	}
+func (s *Server) SetLogSystem(logger log.Logger, lv log.LogLevel) {
+	s.log = log.NewLogSystem(logger, lv)
 }
 
-func (s *Server) GetLogger() log.Logger {
-	return s.log.GetLogger()
+func (s *Server) GetLogSystem() *log.LogSystem {
+	return s.log
 }
 
 // NewServer后即刻设置, 不加锁了

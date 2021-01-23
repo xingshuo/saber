@@ -7,7 +7,7 @@ import (
 	"syscall"
 
 	"github.com/goinggo/mapstructure"
-	sbapi "github.com/xingshuo/saber/pkg"
+	saber "github.com/xingshuo/saber/pkg"
 )
 
 type ReqLogin struct {
@@ -24,7 +24,7 @@ type HeartBeat struct {
 }
 
 func main() {
-	server, err := sbapi.NewServer("config.json")
+	server, err := saber.NewServer("config.json")
 	if err != nil {
 		log.Fatalf("new server err:%v", err)
 	}
@@ -33,7 +33,7 @@ func main() {
 		log.Fatalf("new gate service err:%v", err)
 	}
 	gateSvc.RegisterSvcHandler("HeartBeat", func(ctx context.Context, req interface{}) (interface{}, error) {
-		// svc := sbapi.GetSvcFromCtx(ctx)
+		// svc := saber.GetSvcFromCtx(ctx)
 		hb := &HeartBeat{}
 		err := mapstructure.Decode(req, hb)
 		if err != nil {

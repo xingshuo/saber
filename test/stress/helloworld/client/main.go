@@ -13,8 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	kite "github.com/xingshuo/kite/pkg"
-	sbapi "github.com/xingshuo/saber/pkg"
-	saber "github.com/xingshuo/saber/src"
+	saber "github.com/xingshuo/saber/pkg"
 )
 
 var (
@@ -123,7 +122,7 @@ func main() {
 			log.Fatalf("failed to serve pprof: %v", err)
 		}
 	}()
-	ss, err := sbapi.NewServer("config.json")
+	ss, err := saber.NewServer("config.json")
 	if err != nil {
 		log.Fatalf("new server err:%v", err)
 	}

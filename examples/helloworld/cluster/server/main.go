@@ -7,7 +7,7 @@ import (
 	"syscall"
 
 	"github.com/goinggo/mapstructure"
-	sbapi "github.com/xingshuo/saber/pkg"
+	saber "github.com/xingshuo/saber/pkg"
 )
 
 type ReqLogin struct {
@@ -24,11 +24,11 @@ type HeartBeat struct {
 }
 
 func main() {
-	server, err := sbapi.NewServer("config.json")
+	server, err := saber.NewServer("config.json")
 	if err != nil {
 		log.Fatalf("new server err:%v", err)
 	}
-	// server.GetLogger().SetLevel(sbapi.LevelDebug)
+	// server.GetLogSystem().SetLevel(sblog.LevelDebug)
 	lobbySvc, err := server.NewService("lobby", 1)
 	if err != nil {
 		log.Fatalf("new lobby service err:%v", err)
@@ -39,7 +39,7 @@ func main() {
 		if err != nil {
 			return nil, fmt.Errorf("proto error %w", err)
 		}
-		svc := sbapi.GetSvcFromCtx(ctx)
+		svc := saber.GetSvcFromCtx(ctx)
 		session := 500
 		svc.SendCluster(ctx, "cluster_client", "gate", 1, "HeartBeat", &HeartBeat{Session: session})
 		svc.RegisterTimer(func() {

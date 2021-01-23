@@ -27,7 +27,4 @@ func (l LogLevel) String() string {
 type Logger interface {
 	Log(lv LogLevel, args ...interface{})
 	Logf(lv LogLevel, format string, args ...interface{})
-
-	SetLevel(level LogLevel)
-	GetLevel() LogLevel
 }

@@ -37,7 +37,7 @@ type Service struct {
 	exitDone     *lib.SyncEvent
 	sessionStore *SessionStore
 	suspend      chan struct{}
-	log          *log.LoggerWrapper
+	log          *log.LogSystem
 	codec        Codec
 	packBuffer   [PACK_BUFFER_SIZE]byte
 }
@@ -57,8 +57,7 @@ func (s *Service) Init() {
 	s.exitNotify = lib.NewSyncEvent()
 	s.exitDone = lib.NewSyncEvent()
 	s.suspend = make(chan struct{}, 1)
-	s.log = log.NewLoggerWrapper()
-	s.log.SetLogger(s.server.GetLogger())
+	s.log = s.server.GetLogSystem()
 	s.codec = s.server.codec
 }
 
@@ -95,8 +94,12 @@ func (s *Service) UnRegisterTimer(session uint32) {
 }
 
 // 服务自定义logger实现
-func (s *Service) SetLogger(logger log.Logger) {
-	s.log.SetLogger(logger)
+func (s *Service) SetLogSystem(logger log.Logger, lv log.LogLevel) {
+	s.log = log.NewLogSystem(logger, lv)
+}
+
+func (s *Service) GetLogSystem() *log.LogSystem {
+	return s.log
 }
 
 // 支持服务自定义, 以便与三方服务对接

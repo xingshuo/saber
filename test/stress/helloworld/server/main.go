@@ -11,7 +11,7 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/goinggo/mapstructure"
-	sbapi "github.com/xingshuo/saber/pkg"
+	saber "github.com/xingshuo/saber/pkg"
 )
 
 var (
@@ -45,7 +45,7 @@ func main() {
 		}
 	}()
 
-	server, err := sbapi.NewServer("config.json")
+	server, err := saber.NewServer("config.json")
 	if err != nil {
 		log.Fatalf("new server err:%v", err)
 	}
