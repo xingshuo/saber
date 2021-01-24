@@ -7,7 +7,7 @@ import (
 )
 
 func TestMsgQueue(t *testing.T) {
-	mq := NewMQueue(3)
+	mq := NewMQueue(3, make(chan struct{}))
 	data := []Message{
 		{0, MSG_TYPE_TIMER, 1, nil},
 		{0, MSG_TYPE_TIMER, 2, nil},

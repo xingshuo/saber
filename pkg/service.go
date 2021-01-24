@@ -32,7 +32,6 @@ type Service struct {
 	svcHandlers  map[string]SvcHandlerFunc
 	svcTimers    map[uint32]*SvcTimer
 	rwMu         sync.RWMutex // 其实伪并发模式不需要
-	msgNotify    chan struct{}
 	exitNotify   *lib.SyncEvent
 	exitDone     *lib.SyncEvent
 	sessionStore *SessionStore
@@ -48,14 +47,13 @@ func (s *Service) String() string {
 
 //as C++ constructor
 func (s *Service) Init() {
-	s.msgNotify = make(chan struct{}, 1)
-	s.mqueue = NewMQueue(DEFAULT_MQ_SIZE)
 	s.svcHandlers = make(map[string]SvcHandlerFunc)
 	s.sessionStore = &SessionStore{waitPool: s.server.waitPool}
 	s.sessionStore.Init()
 	s.svcTimers = make(map[uint32]*SvcTimer)
 	s.exitNotify = lib.NewSyncEvent()
 	s.exitDone = lib.NewSyncEvent()
+	s.mqueue = NewMQueue(DEFAULT_MQ_SIZE, s.exitNotify.Done())
 	s.suspend = make(chan struct{}, 1)
 	s.log = s.server.GetLogSystem()
 	s.codec = s.server.codec
@@ -322,9 +320,7 @@ func (s *Service) CallCluster(ctx context.Context, clusterName, svcName string, 
 }
 
 func (s *Service) pushMsg(ctx context.Context, source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
-	if s.mqueue.Push(source, msgType, session, data) {
-		s.msgNotify <- struct{}{}
-	}
+	s.mqueue.Push(source, msgType, session, data)
 }
 
 func (s *Service) pushClusterRequest(ctx context.Context, head *ClusterReqHead, body []byte) {
@@ -383,27 +379,13 @@ func (s *Service) dispatchMsg(source SVC_HANDLE, msgType MsgType, session uint32
 func (s *Service) Serve() {
 	s.log.Infof("cluster %s new service %s handle:%d", s.server.ClusterName(), s, s.handle)
 	for {
-		select {
-		case <-s.msgNotify:
-			for {
-				empty, source, msgType, session, data := s.mqueue.Pop()
-				if empty {
-					break
-				}
-				s.dispatchMsg(source, msgType, session, data)
-			}
-		case <-s.exitNotify.Done():
-			for {
-				empty, source, msgType, session, data := s.mqueue.Pop()
-				if empty {
-					break
-				}
-				s.dispatchMsg(source, msgType, session, data)
-			}
-			s.exitDone.Fire()
-			return
+		empty, source, msgType, session, data := s.mqueue.Pop()
+		if empty {
+			break
 		}
+		s.dispatchMsg(source, msgType, session, data)
 	}
+	s.exitDone.Fire()
 }
 
 func (s *Service) Exit() {

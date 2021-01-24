@@ -3,25 +3,32 @@ package saber
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 // 循环数组消息队列
-func NewMQueue(cap int) *MsgQueue {
+func NewMQueue(cap int, exit <-chan struct{}) *MsgQueue {
 	mq := &MsgQueue{
-		head: 0,
-		tail: 0,
-		cap:  cap,
-		data: make([]Message, cap),
+		head:        0,
+		tail:        0,
+		cap:         cap,
+		data:        make([]Message, cap),
+		waitConsume: 0,
+		waiting:     make(chan struct{}, 1),
+		exit:        exit,
 	}
 	return mq
 }
 
 type MsgQueue struct {
-	head int // 队头
-	tail int // 队尾(指向下一个可放置位置)
-	cap  int
-	data []Message
-	rwMu sync.RWMutex
+	head        int // 队头
+	tail        int // 队尾(指向下一个可放置位置)
+	cap         int
+	data        []Message
+	rwMu        sync.RWMutex
+	waitConsume uint32
+	waiting     chan struct{}
+	exit        <-chan struct{}
 }
 
 func (mq *MsgQueue) expand() {
@@ -35,10 +42,8 @@ func (mq *MsgQueue) expand() {
 	mq.cap *= 2
 }
 
-func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) (first bool) {
+func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
 	mq.rwMu.Lock()
-	defer mq.rwMu.Unlock()
-	first = (mq.head == mq.tail)
 	back := &mq.data[mq.tail]
 	back.Source = source
 	back.MsgType = msgType
@@ -51,20 +56,35 @@ func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, dat
 	if mq.head == mq.tail {
 		mq.expand()
 	}
-	return first
+	mq.rwMu.Unlock()
+	if atomic.CompareAndSwapUint32(&mq.waitConsume, 1, 0) {
+		select {
+		case mq.waiting <- struct{}{}:
+		default:
+		}
+	}
 }
 
+// 队列为空时会阻塞, 直到有新消息或退出
 func (mq *MsgQueue) Pop() (empty bool, source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
+begin:
 	mq.rwMu.Lock()
-	defer mq.rwMu.Unlock()
 	if mq.head == mq.tail { // 由于Push时相等会扩容,所以相等只可能是空
-		return true, 0, 0, 0, nil
+		atomic.StoreUint32(&mq.waitConsume, 1)
+		mq.rwMu.Unlock()
+		select {
+		case <-mq.waiting:
+			goto begin
+		case <-mq.exit:
+			return true, 0, 0, 0, nil
+		}
 	}
 	top := &mq.data[mq.head]
 	mq.head++
 	if mq.head >= mq.cap {
 		mq.head = 0
 	}
+	mq.rwMu.Unlock()
 	return false, top.Source, top.MsgType, top.Session, top.Data
 }
 
