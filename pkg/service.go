@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
-
 	"github.com/xingshuo/saber/common/lib"
 	"github.com/xingshuo/saber/common/log"
 	"github.com/xingshuo/saber/common/utils"
+	"sync"
 )
 
 type SvcHandlerFunc func(ctx context.Context, req interface{}) (rsp interface{}, err error)
@@ -322,8 +321,12 @@ func (s *Service) CallCluster(ctx context.Context, clusterName, svcName string, 
 }
 
 func (s *Service) pushMsg(ctx context.Context, source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
-	if s.mqueue.Push(source, msgType, session, data) {
-		s.msgNotify <- struct{}{}
+	wakeUp := s.mqueue.Push(source, msgType, session, data)
+	if wakeUp {
+		select {
+		case s.msgNotify <- struct{}{}:
+		default:
+		}
 	}
 }
 

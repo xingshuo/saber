@@ -12,6 +12,7 @@ func NewMQueue(cap int) *MsgQueue {
 		tail: 0,
 		cap:  cap,
 		data: make([]Message, cap),
+		waitConsume: true,
 	}
 	return mq
 }
@@ -22,6 +23,7 @@ type MsgQueue struct {
 	cap  int
 	data []Message
 	rwMu sync.RWMutex
+	waitConsume bool
 }
 
 func (mq *MsgQueue) expand() {
@@ -35,10 +37,13 @@ func (mq *MsgQueue) expand() {
 	mq.cap *= 2
 }
 
-func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) (first bool) {
+func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) bool {
 	mq.rwMu.Lock()
 	defer mq.rwMu.Unlock()
-	first = (mq.head == mq.tail)
+	wakeUp := mq.waitConsume
+	if wakeUp {
+		mq.waitConsume = false
+	}
 	back := &mq.data[mq.tail]
 	back.Source = source
 	back.MsgType = msgType
@@ -51,13 +56,14 @@ func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, dat
 	if mq.head == mq.tail {
 		mq.expand()
 	}
-	return first
+	return wakeUp
 }
 
 func (mq *MsgQueue) Pop() (empty bool, source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
 	mq.rwMu.Lock()
 	defer mq.rwMu.Unlock()
 	if mq.head == mq.tail { // 由于Push时相等会扩容,所以相等只可能是空
+		mq.waitConsume = true
 		return true, 0, 0, 0, nil
 	}
 	top := &mq.data[mq.head]
