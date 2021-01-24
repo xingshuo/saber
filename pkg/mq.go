@@ -3,7 +3,6 @@ package saber
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 )
 
 // 循环数组消息队列
@@ -13,7 +12,7 @@ func NewMQueue(cap int, exit <-chan struct{}) *MsgQueue {
 		tail:        0,
 		cap:         cap,
 		data:        make([]Message, cap),
-		waitConsume: 0,
+		waitConsume: false,
 		waiting:     make(chan struct{}, 1),
 		exit:        exit,
 	}
@@ -26,7 +25,7 @@ type MsgQueue struct {
 	cap         int
 	data        []Message
 	rwMu        sync.RWMutex
-	waitConsume uint32
+	waitConsume bool
 	waiting     chan struct{}
 	exit        <-chan struct{}
 }
@@ -43,7 +42,12 @@ func (mq *MsgQueue) expand() {
 }
 
 func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, data interface{}) {
+	wakeUp := false
 	mq.rwMu.Lock()
+	if mq.waitConsume {
+		wakeUp = true
+		mq.waitConsume = false
+	}
 	back := &mq.data[mq.tail]
 	back.Source = source
 	back.MsgType = msgType
@@ -57,7 +61,7 @@ func (mq *MsgQueue) Push(source SVC_HANDLE, msgType MsgType, session uint32, dat
 		mq.expand()
 	}
 	mq.rwMu.Unlock()
-	if atomic.CompareAndSwapUint32(&mq.waitConsume, 1, 0) {
+	if wakeUp {
 		select {
 		case mq.waiting <- struct{}{}:
 		default:
@@ -70,7 +74,7 @@ func (mq *MsgQueue) Pop() (empty bool, source SVC_HANDLE, msgType MsgType, sessi
 begin:
 	mq.rwMu.Lock()
 	if mq.head == mq.tail { // 由于Push时相等会扩容,所以相等只可能是空
-		atomic.StoreUint32(&mq.waitConsume, 1)
+		mq.waitConsume = true
 		mq.rwMu.Unlock()
 		select {
 		case <-mq.waiting:
