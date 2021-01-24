@@ -29,6 +29,7 @@ type Server struct {
 	timerStore *TimeStore
 	log        *log.LogSystem
 	codec      Codec
+	waitPool   *waitPool
 }
 
 func (s *Server) Init(config string) error {
@@ -49,6 +50,7 @@ func (s *Server) Init(config string) error {
 		server: s,
 	}
 	s.timerStore.Init()
+	s.waitPool = newWaitPool()
 	return nil
 }
 

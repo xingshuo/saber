@@ -51,7 +51,7 @@ func (s *Service) Init() {
 	s.msgNotify = make(chan struct{}, 1)
 	s.mqueue = NewMQueue(DEFAULT_MQ_SIZE)
 	s.svcHandlers = make(map[string]SvcHandlerFunc)
-	s.sessionStore = &SessionStore{}
+	s.sessionStore = &SessionStore{waitPool: s.server.waitPool}
 	s.sessionStore.Init()
 	s.svcTimers = make(map[uint32]*SvcTimer)
 	s.exitNotify = lib.NewSyncEvent()
