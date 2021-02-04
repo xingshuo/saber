@@ -7,4 +7,5 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/stretchr/testify v1.6.1
 	github.com/xingshuo/kite v0.0.0-20210119150727-8e3640efffeb
+	github.com/xingshuo/ms-go v0.0.0-20210204165015-6964d65a07db
 )

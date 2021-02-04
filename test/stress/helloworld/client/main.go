@@ -15,6 +15,7 @@ import (
 	kite "github.com/xingshuo/kite/pkg"
 	sbapi "github.com/xingshuo/saber/pkg"
 	saber "github.com/xingshuo/saber/src"
+	"github.com/xingshuo/ms-go/deadlock"
 )
 
 var (
@@ -82,7 +83,7 @@ func (rh *ReqHandler) OnRequest() error {
 	if rpcSvcNum > 0 {
 		svcID += rh.svcID % uint32(rpcSvcNum)
 	}
-	ctx := context.WithValue(context.Background(), saber.CtxKeyRpcTimeoutMS, 3*time.Second)
+	ctx := context.WithValue(context.Background(), saber.CtxKeyRpcTimeoutMS, 10*time.Second)
 	reply, err := rh.client.CallCluster(ctx, "stress_server", "lobby", svcID, "ReqLogin", &ReqLogin{
 		Gid:  uint64(10100000 + rh.svcID),
 		Name: uuid.New().String()[:8],
@@ -112,6 +113,8 @@ func init() {
 	flag.IntVar(&reqNumPerConcy, "n", 50, "per concurrency req num")
 	flag.IntVar(&rpcSvcNum, "svc", 1, "rpc svc num")
 	kite.RegisterMsgType(MSG_SABER, "SABER")
+	deadlock.Opts.PrintDeadlockRoutineNum = 5
+	deadlock.Opts.Disable = true
 }
 
 func main() {
