@@ -48,6 +48,7 @@ func (ss *SessionStore) NewSessionID() uint32 {
 	return atomic.AddUint32(&ss.seq, 1)
 }
 
+// Fixme: 存在2个goroutine同时访问ss.waitSessions的情况(Wait的超时和WakeUp并行), 不过目前只有读取和删除会并发, 暂时不加锁
 func (ss *SessionStore) WakeUp(session uint32, rsp *SvcResponse) error {
 	done := ss.waitSessions[session]
 	if done == nil {
@@ -57,7 +58,7 @@ func (ss *SessionStore) WakeUp(session uint32, rsp *SvcResponse) error {
 	select {
 	case done <- rsp:
 		return nil
-	default:
+	default: // Wait和 Wakeup并行先触发超时了, 所以失败
 		return RPC_WAKEUP_ERR
 	}
 }

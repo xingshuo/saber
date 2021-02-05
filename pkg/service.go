@@ -177,10 +177,6 @@ func (s *Service) onRecvSvcRsp(source SVC_HANDLE, session uint32, msg interface{
 	err := s.sessionStore.WakeUp(session, rsp)
 	if err != nil {
 		s.log.Errorf("wakeup Session %d from %d err: %v", session, source, err)
-		// 失败要唤醒下
-		if !s.config.Parallel {
-			s.suspend <- struct{}{}
-		}
 	}
 }
 
@@ -250,11 +246,7 @@ func (s *Service) onRecvClusterRsp(source SVC_HANDLE, session uint32, msg interf
 	}
 	err := s.sessionStore.WakeUp(session, rsp)
 	if err != nil {
-		s.log.Errorf("wakeup cluster Session %d from err: %v", session, source, err)
-		// 失败要唤醒下
-		if !s.config.Parallel {
-			s.suspend <- struct{}{}
-		}
+		s.log.Errorf("wakeup cluster Session %d from %d err: %v", session, source, err)
 	}
 }
 
