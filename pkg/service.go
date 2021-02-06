@@ -7,7 +7,6 @@ import (
 	"github.com/xingshuo/saber/common/lib"
 	"github.com/xingshuo/saber/common/log"
 	"github.com/xingshuo/saber/common/utils"
-	"sync"
 )
 
 type SvcHandlerFunc func(ctx context.Context, req interface{}) (rsp interface{}, err error)
@@ -17,12 +16,7 @@ type SvcTimer struct {
 	count  int
 }
 
-type ServiceConfig struct {
-	Parallel bool // 是否真并发
-}
-
 type Service struct {
-	config       ServiceConfig
 	server       *Server
 	name         string // 服务名 如: chat, agent
 	instID       uint32 // 服务实例ID
@@ -30,7 +24,6 @@ type Service struct {
 	mqueue       *MsgQueue
 	svcHandlers  map[string]SvcHandlerFunc
 	svcTimers    map[uint32]*SvcTimer
-	rwMu         sync.RWMutex // 其实伪并发模式不需要
 	msgNotify    chan struct{}
 	exitNotify   *lib.SyncEvent
 	exitDone     *lib.SyncEvent
@@ -62,33 +55,33 @@ func (s *Service) Init() {
 
 // 服务启动时注册
 func (s *Service) RegisterSvcHandler(method string, handler SvcHandlerFunc) {
-	s.rwMu.Lock()
 	s.svcHandlers[method] = handler
-	s.rwMu.Unlock()
 }
 
 // interval:执行间隔, 单位:毫秒
+// 注意: interval == 0时, 定时消息立即回射, 且固定只执行一次. 典型应用场景: 服务初始化时RegisterSvcHandler
 // count: 执行次数, > 0:有限次, == 0:无限次
 func (s *Service) RegisterTimer(onTick SvcTimerFunc, interval int64, count int) uint32 {
-	if interval <= MIN_TICK_INTERVAL_MS {
-		interval = MIN_TICK_INTERVAL_MS
-	}
 	session := s.sessionStore.NewSessionID()
 	t := &SvcTimer{
 		onTick: onTick,
 		count:  count,
 	}
-	s.rwMu.Lock()
 	s.svcTimers[session] = t
-	s.rwMu.Unlock()
-	s.server.timerStore.Push(s.handle, session, interval, count)
+	if interval == 0 {
+		t.count = 1
+		s.pushMsg(context.Background(), SVC_HANDLE(0), MSG_TYPE_TIMER, session, nil)
+	} else {
+		if interval <= MIN_TICK_INTERVAL_MS {
+			interval = MIN_TICK_INTERVAL_MS
+		}
+		s.server.timerStore.Push(s.handle, session, interval, count)
+	}
 	return session
 }
 
 func (s *Service) UnRegisterTimer(session uint32) {
-	s.rwMu.Lock()
 	delete(s.svcTimers, session)
-	s.rwMu.Unlock()
 	s.server.timerStore.Remove(s.handle, session)
 }
 
@@ -109,41 +102,31 @@ func (s *Service) SetCodec(c Codec) {
 }
 
 func (s *Service) isParallel() bool {
-	return s.config.Parallel
+	return false
 }
 
 func (s *Service) onSvcTimer(session uint32) {
-	if !s.config.Parallel {
-		defer func() {
-			s.suspend <- struct{}{}
-		}()
-	}
-	s.rwMu.RLock()
 	t := s.svcTimers[session]
-	s.rwMu.RUnlock()
 	if t != nil {
 		t.onTick()
 		// 有限次执行
-		s.rwMu.Lock()
 		if t.count > 0 {
 			t.count--
 			if t.count == 0 {
 				delete(s.svcTimers, session)
 			}
 		}
-		s.rwMu.Unlock()
 	}
+	s.suspend <- struct{}{}
 }
 
 func (s *Service) onRecvSvcReq(source SVC_HANDLE, session uint32, msg interface{}) {
-	if !s.config.Parallel {
-		defer func() {
-			s.suspend <- struct{}{}
-			if e := recover(); e != nil {
-				s.log.Errorf("panic occurred on recv svc req: %v", e)
-			}
-		}()
-	}
+	defer func() {
+		s.suspend <- struct{}{}
+		if e := recover(); e != nil {
+			s.log.Errorf("panic occurred on recv svc req: %v", e)
+		}
+	}()
 	req := msg.(*SvcRequest)
 	handler := s.svcHandlers[req.Method]
 	if handler == nil {
@@ -172,7 +155,7 @@ func (s *Service) onRecvSvcReq(source SVC_HANDLE, session uint32, msg interface{
 }
 
 func (s *Service) onRecvSvcRsp(source SVC_HANDLE, session uint32, msg interface{}) {
-	// 根据session唤醒:如果成功, 这里不需要唤醒suspend chan, 等发起rpc的goroutine处理完自己唤醒
+	// 根据session唤醒, 这里不需要唤醒suspend chan, 等发起rpc的goroutine处理完自己唤醒
 	rsp := msg.(*SvcResponse)
 	err := s.sessionStore.WakeUp(session, rsp)
 	if err != nil {
@@ -181,14 +164,12 @@ func (s *Service) onRecvSvcRsp(source SVC_HANDLE, session uint32, msg interface{
 }
 
 func (s *Service) onRecvClusterReq(source SVC_HANDLE, session uint32, msg interface{}) {
-	if !s.config.Parallel {
-		defer func() {
-			s.suspend <- struct{}{}
-			if e := recover(); e != nil {
-				s.log.Errorf("panic occurred on recv cluster req: %v", e)
-			}
-		}()
-	}
+	defer func() {
+		s.suspend <- struct{}{}
+		if e := recover(); e != nil {
+			s.log.Errorf("panic occurred on recv cluster req: %v", e)
+		}
+	}()
 	cluster, exist := s.server.sidecar.GetClusterName(source)
 	req := msg.(*SvcRequest)
 	arg, err := s.codec.Unmarshal(MSG_TYPE_CLUSTER_REQ, req.Method, req.Body.([]byte))
@@ -369,10 +350,8 @@ func (s *Service) dispatchMsg(source SVC_HANDLE, msgType MsgType, session uint32
 		return
 	}
 
-	if !s.config.Parallel { // 伪并发
-		<-s.suspend
-		s.log.Debugf("%s dispatch %s done from %s", s, msgType, s.server.GetService(source))
-	}
+	<-s.suspend
+	s.log.Debugf("%s dispatch %s done from %s", s, msgType, s.server.GetService(source))
 }
 
 func (s *Service) Serve() {

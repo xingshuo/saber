@@ -41,11 +41,12 @@ func (ss *SessionStore) Init() {
 }
 
 func (ss *SessionStore) NewSessionID() uint32 {
-	id := atomic.AddUint32(&ss.seq, 1)
-	if id != 0 {
-		return id
+	for {
+		id := atomic.AddUint32(&ss.seq, 1)
+		if id != 0 {
+			return id
+		}
 	}
-	return atomic.AddUint32(&ss.seq, 1)
 }
 
 // Fixme: 存在2个goroutine同时访问ss.waitSessions的情况(Wait的超时和WakeUp并行), 不过目前只有读取和删除会并发, 暂时不加锁
