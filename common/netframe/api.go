@@ -17,10 +17,8 @@ func NewDialer(address string, newReceiver func() Receiver, opts ...DialOption) 
 	d := &Dialer{
 		opts:        defaultDialOptions(),
 		address:     address,
-		quit:        lib.NewSyncEvent(),
 		newReceiver: newReceiver,
-		state:       Idle,
-		notifys:     make(map[chan error]bool),
+		transport:   &Transport{state: Idle},
 	}
 	//处理参数
 	for _, opt := range opts {

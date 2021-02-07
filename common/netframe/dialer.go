@@ -6,11 +6,17 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/xingshuo/saber/common/lib"
 )
 
-// Tcp Dial流程封装, 并提供断线重连的能力
+var (
+	ErrClosed = fmt.Errorf("transport shutdown")
+)
+
+const (
+	MAX_DIAL_TIMEOUT_SEC = 20
+)
+
+// 基于Tcp向指定目标地址发包流程封装
 
 type State int
 
@@ -32,226 +38,108 @@ func (s State) String() string {
 }
 
 const (
-	// Idle indicates the ClientConn is idle.
+	// Transport初始化状态
 	Idle State = iota
-	// Connecting indicates the ClientConn is connecting.
+	// 尝试连接中
 	Connecting
-	// Ready indicates the ClientConn is ready for work.
+	// 可正常发包
 	Ready
-	// TransientFailure indicates the ClientConn has seen a failure but expects to recover.
+	// 连接异常状态
 	TransientFailure
-	// Shutdown indicates the ClientConn has started shutting down.
+	// Transport关闭
 	Shutdown
 )
 
-type Dialer struct {
-	opts        dialOptions
-	conn        *Conn
-	address     string
-	newReceiver func() Receiver
-	wg          sync.WaitGroup
-	quit        *lib.SyncEvent
-	state       State
-	notifys     map[chan error]bool
-	rwMu        sync.RWMutex
+type Transport struct {
+	conn  *Conn
+	state State
+	rwMu  sync.Mutex
 }
 
-func (d *Dialer) dial() error {
-	s := d.getState()
-	if s == Connecting {
-		return fmt.Errorf("Already In Connecting")
-	} else if s == Ready {
-		return nil
-	} else if s == Shutdown {
-		return fmt.Errorf("Already Shutdown")
+func (t *Transport) get_connection(d *Dialer) (*Conn, error) {
+	t.rwMu.Lock()
+	defer t.rwMu.Unlock()
+	if t.state == Ready {
+		return t.conn, nil
 	}
-	var (
-		err     error
-		rawConn net.Conn
-	)
-	d.setState(Connecting)
-	//wait last connection close done.
-	d.wg.Wait()
-	if d.opts.dialTimeout > 0 {
-		rawConn, err = net.DialTimeout("tcp", d.address, time.Duration(d.opts.dialTimeout)*time.Second)
-	} else {
-		rawConn, err = net.Dial("tcp", d.address)
+	if t.state == Shutdown {
+		return nil, ErrClosed
 	}
+	timeoutSec := d.opts.dialTimeout
+	if timeoutSec <= 0 {
+		timeoutSec = MAX_DIAL_TIMEOUT_SEC
+	}
+	t.state = Connecting
+	rawConn, err := net.DialTimeout("tcp", d.address, time.Duration(timeoutSec)*time.Second)
 	if err != nil {
-		d.setState(TransientFailure)
-		d.doNotify(err)
-		return err
+		t.state = TransientFailure
+		return nil, err
 	}
-	//connect过程中状态发生变化, 例如Dialer关闭了
-	if !d.isInState(Connecting) {
-		err = fmt.Errorf("Connecting State Changed.")
-		d.doNotify(err)
-		return err
-	}
-	d.rwMu.Lock()
-	d.conn = new(Conn)
-	d.rwMu.Unlock()
-	err = d.conn.Init(rawConn, d.newReceiver())
+	t.conn = &Conn{rawConn: rawConn}
+	err = t.conn.Init(rawConn, d.newReceiver())
 	if err != nil {
-		d.setState(TransientFailure)
-		d.doNotify(err)
-		return err
+		t.state = TransientFailure
+		return nil, err
 	}
-	d.setState(Ready)
-	d.wg.Add(2)
+	t.state = Ready
 	go func() {
-		err := d.conn.loopRead()
+		err := t.conn.loopRead()
 		if err != nil {
-			d.conn.Close()
-			d.setState(TransientFailure)
+			t.rwMu.Lock()
+			t.conn.Close()
+			t.state = TransientFailure
+			t.rwMu.Unlock()
 			log.Printf("loop read err:%v", err)
 		}
-		d.wg.Done()
 	}()
 	go func() {
-		err := d.conn.loopWrite()
+		err := t.conn.loopWrite()
 		if err != nil {
-			d.conn.Close()
-			d.setState(TransientFailure)
+			t.rwMu.Lock()
+			t.conn.Close()
+			t.state = TransientFailure
+			t.rwMu.Unlock()
 			log.Printf("loop write err:%v", err)
 		}
-		d.wg.Done()
 	}()
-	d.doNotify(nil)
+	return t.conn, nil
+}
+
+func (t *Transport) shutdown() error {
+	t.rwMu.Lock()
+	defer t.rwMu.Unlock()
+	if t.state == Shutdown {
+		return fmt.Errorf("already shutdown")
+	}
+	t.state = Shutdown
+	if t.conn != nil {
+		t.conn.Close()
+	}
 	return nil
 }
 
-func (d *Dialer) reConnect() error {
-	for {
-		select {
-		case <-d.conn.Done():
-			log.Printf("connection close")
-		case <-d.quit.Done():
-			log.Printf("quit dial")
-			return nil
-		}
-		//---下面是重连逻辑---
-		retryTimes := 0
-	retry:
-		for {
-			select {
-			case <-d.quit.Done():
-				log.Printf("quit dial.")
-				return nil
-			default:
-				retryTimes++
-				if err := d.dial(); err != nil {
-					log.Printf("reconnect %dth failed %v", retryTimes, err)
-					time.Sleep(time.Duration(d.opts.retryInterval) * time.Second)
-					continue
-				}
-				log.Printf("reconnect %dth succeed!", retryTimes)
-				break retry
-			}
-		}
-	}
-}
-
-func (d *Dialer) setState(s State) {
-	d.rwMu.Lock()
-	defer d.rwMu.Unlock()
-	if d.state == Shutdown { //Dialer已彻底关闭
-		return
-	}
-	d.state = s
-}
-
-func (d *Dialer) getState() State {
-	d.rwMu.RLock()
-	defer d.rwMu.RUnlock()
-	return d.state
-}
-
-func (d *Dialer) isInState(s State) bool {
-	d.rwMu.RLock()
-	defer d.rwMu.RUnlock()
-	return s == d.state
-}
-
-func (d *Dialer) getNotify() chan error {
-	d.rwMu.Lock()
-	defer d.rwMu.Unlock()
-	c := make(chan error)
-	d.notifys[c] = true
-	return c
-}
-
-func (d *Dialer) delNotify(c chan error) {
-	d.rwMu.Lock()
-	defer d.rwMu.Unlock()
-	delete(d.notifys, c)
-}
-
-func (d *Dialer) doNotify(err error) {
-	d.rwMu.Lock()
-	notifys := d.notifys
-	d.notifys = make(map[chan error]bool)
-	d.rwMu.Unlock()
-	for c := range notifys {
-		select {
-		case c <- err:
-		default:
-		}
-	}
+type Dialer struct {
+	opts        dialOptions
+	address     string
+	newReceiver func() Receiver
+	transport   *Transport
 }
 
 //外部调用接口
 func (d *Dialer) Start() error {
-	if err := d.dial(); err != nil {
-		return err
-	}
-	if d.opts.retryInterval > 0 {
-		go d.reConnect()
-	}
-	return nil
-}
-
-func (d *Dialer) Shutdown() error {
-	err := fmt.Errorf("repeat shutdown")
-	if d.quit.Fire() {
-		err = nil
-		d.setState(Shutdown)
-		d.rwMu.RLock()
-		c := d.conn
-		d.rwMu.RUnlock()
-		if c != nil {
-			c.Close()
-		}
-	}
+	_, err := d.transport.get_connection(d)
 	return err
 }
 
+func (d *Dialer) Shutdown() error {
+	return d.transport.shutdown()
+}
+
 func (d *Dialer) Send(b []byte) error {
-	s := d.getState()
-	if s == Ready {
-		d.conn.Send(b)
-		return nil
-	} else if s == Connecting {
-		c := d.getNotify()
-		select {
-		case <-time.After(3 * time.Second):
-			d.delNotify(c)
-			return fmt.Errorf("Connecting Timeout")
-		case err := <-c:
-			if err != nil {
-				return err
-			}
-			d.conn.Send(b)
-			return nil
-		}
-	} else if s == Shutdown {
-		return fmt.Errorf("Already Shutdown.")
-	} else {
-		err := d.dial()
-		if err != nil {
-			return err
-		}
-		d.conn.Send(b)
-		return nil
+	conn, err := d.transport.get_connection(d)
+	if err != nil {
+		return err
 	}
+	conn.Send(b)
+	return nil
 }
