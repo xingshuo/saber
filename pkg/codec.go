@@ -63,13 +63,13 @@ func (h *ClusterBaseHead) Method() string {
 func (h *ClusterBaseHead) Pack(b []byte) (uintptr, error) {
 	var pos uintptr
 	// source
-	binary.LittleEndian.PutUint64(b[pos:], h.source)
+	binary.BigEndian.PutUint64(b[pos:], h.source)
 	pos = pos + unsafe.Sizeof(h.source)
 	// session
-	binary.LittleEndian.PutUint32(b[pos:], h.session)
+	binary.BigEndian.PutUint32(b[pos:], h.session)
 	pos = pos + unsafe.Sizeof(h.session)
 	// destination
-	binary.LittleEndian.PutUint64(b[pos:], h.destination)
+	binary.BigEndian.PutUint64(b[pos:], h.destination)
 	pos = pos + unsafe.Sizeof(h.destination)
 	// mdLen
 	copy(b[pos:], []byte{h.mdLen})
@@ -92,21 +92,21 @@ func (h *ClusterBaseHead) Unpack(b []byte) (uintptr, error) {
 	if len(b) < int(nextPos) {
 		return pos, PACK_BUFFER_SHORT_ERR
 	}
-	h.source = binary.LittleEndian.Uint64(b[pos:])
+	h.source = binary.BigEndian.Uint64(b[pos:])
 	pos = nextPos
 	// session
 	nextPos = pos + unsafe.Sizeof(h.session)
 	if len(b) < int(nextPos) {
 		return pos, PACK_BUFFER_SHORT_ERR
 	}
-	h.session = binary.LittleEndian.Uint32(b[pos:])
+	h.session = binary.BigEndian.Uint32(b[pos:])
 	pos = nextPos
 	// destination
 	nextPos = pos + unsafe.Sizeof(h.destination)
 	if len(b) < int(nextPos) {
 		return pos, PACK_BUFFER_SHORT_ERR
 	}
-	h.destination = binary.LittleEndian.Uint64(b[pos:])
+	h.destination = binary.BigEndian.Uint64(b[pos:])
 	pos = nextPos
 	// mdLen
 	nextPos = pos + unsafe.Sizeof(h.mdLen)
@@ -178,7 +178,7 @@ func (h *ClusterRspHead) Pack(b []byte) (uintptr, error) {
 	if err != nil {
 		return pos, err
 	}
-	binary.LittleEndian.PutUint32(b[pos:], h.errCode)
+	binary.BigEndian.PutUint32(b[pos:], h.errCode)
 	pos = pos + unsafe.Sizeof(h.errCode)
 	if h.errCode != ErrCode_OK {
 		// emLen
@@ -200,7 +200,7 @@ func (h *ClusterRspHead) Unpack(b []byte) (uintptr, error) {
 	if len(b) < int(nextPos) {
 		return pos, PACK_BUFFER_SHORT_ERR
 	}
-	h.errCode = binary.LittleEndian.Uint32(b[pos:])
+	h.errCode = binary.BigEndian.Uint32(b[pos:])
 	pos = nextPos
 	if h.errCode != ErrCode_OK {
 		// emLen
@@ -253,7 +253,7 @@ func NetPackRequest(buffer []byte, cc Codec, source SVC_HANDLE, session uint32, 
 	}
 	bsize := copy(buffer[pos:], body)
 	pos += bsize
-	binary.LittleEndian.PutUint32(buffer, uint32(pos-PkgHeadLen))
+	binary.BigEndian.PutUint32(buffer, uint32(pos-PkgHeadLen))
 	return buffer[:pos], nil
 }
 
@@ -293,7 +293,7 @@ func NetPackResponse(buffer []byte, cc Codec, source SVC_HANDLE, session uint32,
 		bsize := copy(buffer[pos:], body)
 		pos += bsize
 	}
-	binary.LittleEndian.PutUint32(buffer, uint32(pos-PkgHeadLen))
+	binary.BigEndian.PutUint32(buffer, uint32(pos-PkgHeadLen))
 	return buffer[:pos], nil
 }
 
@@ -301,7 +301,7 @@ func NetUnpack(b []byte) (int, []byte) { //返回(消耗字节数,实际内容)
 	if len(b) < PkgHeadLen { //不够包头长度
 		return 0, nil
 	}
-	bodyLen := int(binary.LittleEndian.Uint32(b))
+	bodyLen := int(binary.BigEndian.Uint32(b))
 	if len(b) < PkgHeadLen+bodyLen { //不够body长度
 		return 0, nil
 	}
