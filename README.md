@@ -1,6 +1,6 @@
 基于golang实现的Actor框架
 ====
-* 仓库迁移至 https://github.com/xingshuo/lugo 该仓库不再继续维护
+* 仓库迁移至 https://github.com/xingshuo/skyline 该仓库不再继续维护
 ![flowchart](https://github.com/xingshuo/saber/blob/master/res/saber.png)
 
 ![flowchart](https://github.com/xingshuo/saber/blob/master/res/protoc.png)
